@@ -1,0 +1,210 @@
+"""
+Sharing API client.
+"""
+
+import logging
+import re
+import time
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Optional, Union
+from urllib.parse import parse_qs, urlparse, urlunparse
+
+import httpx
+
+from .errors import Error, NetworkError, QueryError, Retry
+
+logger = logging.getLogger(__name__)
+
+
+class _ApiClient:
+    """Sharing API client."""
+
+    # Allowed query parameters
+    allowed_params = {
+        "filter",
+        "projection",
+        "limit",
+        "token",
+        "start",
+        "end",
+        "sort",
+        "reverse",
+    }
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        transport: Optional[httpx.BaseTransport] = None,
+        sleep_before_first_status_query: float = 0.5,
+        sleep_after_50x_error_within_query: float = 10,
+    ):
+        self.urls = _ShareUrls(url)
+
+        # Transport to use in httpx client. Should only be defined in testing
+        self.transport = transport
+        # Time to wait for before first GET status after POST query
+        self.sleep_before_first_status_query = sleep_before_first_status_query
+        # Time to wait after 50x response within a query. These are typically
+        # transitory errors on the server side
+        self.sleep_after_50x_error_within_query = sleep_after_50x_error_within_query
+
+    def _get_client(self) -> httpx.Client:
+        """Initiaze new client."""
+        # TODO add agent or similar
+        return httpx.Client(
+            base_url=self.urls.base_url,
+            follow_redirects=True,
+            timeout=60,
+            headers={**self.urls.authorization_header},
+            transport=self.transport,
+        )
+
+    def async_query(
+        self, params: Optional[dict[str, Union[str, Sequence[str]]]] = None
+    ) -> httpx.Response:
+        """Execute 3-phase async query."""
+        qp = {**self.urls.qp, **(params or {})}
+        invalid_params = qp.keys() - self.allowed_params
+        if invalid_params:
+            raise QueryError(f"Invalid query parameters: {invalid_params}")
+
+        with self._get_client() as client:
+            status_url = self._async_post_query(client, qp)
+            time.sleep(self.sleep_before_first_status_query)
+            result_url = self._async_get_result_url(client, status_url)
+            return self._async_get_result_response(client, result_url)
+
+    def _async_post_query(
+        self,
+        client: httpx.Client,
+        params: Optional[dict[str, Union[str, Sequence[str]]]] = None,
+    ) -> str:
+        """POST async query.
+
+        Returns status url.
+        """
+        try:
+            response = client.post(url=self.urls.async_path, params=params)
+        except httpx.RequestError as error:
+            raise NetworkError(f"Downloading {error.request.url} failed: {error}")
+
+        if self._server_unavailable(response.status_code):
+            logger.debug(
+                f"Error posting job, retry later ({response.status_code} {response.text})"
+            )
+            # Server error on initial post -> suggest retrying whole query later again
+            raise Retry(after=response.headers.get("Retry-After", 10))
+        elif response.status_code != 202:
+            raise NetworkError(
+                f"Unexpected status {response.status_code} for submit, {response.text}"
+            )
+
+        try:
+            return response.headers["Location"]
+        except KeyError:
+            raise Error("Location header missing from response")
+
+    def _async_get_result_url(self, client: httpx.Client, url: str) -> str:
+        """GET async result url from status url."""
+        while True:
+            try:
+                response = client.get(url=url, follow_redirects=False)
+            except httpx.RequestError as error:
+                raise NetworkError(f"Downloading {error.request.url} failed: {error}")
+
+            if response.status_code == 302:
+                # results are ready
+                break
+            elif response.status_code == 202:
+                time.sleep(int(response.headers.get("Retry-After", 1)))
+            elif self._server_unavailable(response.status_code):
+                logger.debug(
+                    f"Error getting status, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
+                )
+                time.sleep(self.sleep_after_50x_error_within_query)
+            else:
+                raise Retry(
+                    f"Unexpected status {response.status_code} loading results, {response.text}"
+                )
+
+        try:
+            return response.headers["Location"]
+        except KeyError:
+            raise Error("Location header missing from response")
+
+    def _async_get_result_response(
+        self, client: httpx.Client, url: str
+    ) -> httpx.Response:
+        """GET async result response."""
+        while True:
+            try:
+                response = client.get(url)
+            except httpx.RequestError as error:
+                raise NetworkError(f"Downloading {error.request.url} failed: {error}")
+
+            if response.status_code == 200:
+                break
+            elif response.status_code == 410:
+                raise Retry("Results have been fetched already")
+            elif self._server_unavailable(response.status_code):
+                # sleep only 1 sec since results are stored only for a limited time
+                logger.debug(
+                    f"Error getting results, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
+                )
+                time.sleep(self.sleep_after_50x_error_within_query)
+            else:
+                raise Retry(
+                    f"Unexpected status {response.status_code} fetching results, {response.text}"
+                )
+
+        return response
+
+    @staticmethod
+    def _server_unavailable(status: int) -> bool:
+        """Does status mean server is unavailable?
+
+        500 / 502 / 503 / 504 typically overloaded system. All of these should be
+        transient on a valid hub url.
+        """
+        return status in (500, 502, 503, 504)
+
+
+@dataclass
+class _ShareUrls:
+    """Share url handling."""
+
+    base_url: str
+    sync_path: str
+    async_path: str
+    authorization_header: dict[str, str]
+    qp: dict[str, list[str]]
+
+    def __init__(self, sync_url: str):
+        """Build urls from a sync url.
+
+        The provided sync url must have apikey query parameter, which will be
+        separated from the url and used in the Authorization header on async api
+        queries. All the query parameters are parsed and saved in `qp`, this is
+        to allow merging them with the parameters provided in the url.
+        (by default httpx overrides qp's in url)
+
+        >>> _ShareUrls("https://example.com/shares/v2/share-id?apikey=api-key&filter=foo=bar")
+        _ShareUrls(base_url='https://example.com', sync_path='/shares/v2/share-id', async_path='/shares/v2/async/share-id', authorization_header={'Authorization': 'token api-key'}, qp={'filter': ['foo=bar']})
+        """
+        # async api doesn't support apikey; do authorization via Authorization header
+        o = urlparse(sync_url)
+
+        qp = parse_qs(o.query, keep_blank_values=True)
+
+        if "apikey" not in qp:
+            raise QueryError("API share url must have apikey parameter")
+        elif len(qp["apikey"]) > 1:
+            raise QueryError("API share url must have exactly one apikey parameter")
+
+        self.base_url = urlunparse(o._replace(path="", query=""))
+        self.sync_path = o.path
+        self.async_path = re.sub(r"^/shares(/v2)?", "/shares/v2/async", o.path)
+        self.authorization_header = {"Authorization": f"token {qp.pop('apikey')[0]}"}
+        self.qp = qp
