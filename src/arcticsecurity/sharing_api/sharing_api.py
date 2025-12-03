@@ -8,7 +8,7 @@ TODO:
 
 import logging
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Sequence, Set
 from datetime import datetime
 from typing import Any, Optional, Union
 
@@ -22,12 +22,9 @@ Event = dict[str, Union[str, list[str]]]
 class Sync:
     """Sync events from sharing API."""
 
-    # Allowed query parameters
     allowed_user_provided_qps = {
         "filter",
         "projection",
-        "limit",
-        "token",
     }
 
     def __init__(
@@ -38,6 +35,23 @@ class Sync:
         projection: Optional[Sequence[str]] = None,
         start: Union[datetime, int, float, None] = None,
     ):
+        # Check args
+        if not isinstance(url, str):
+            raise TypeError(f"url must be string not {type(url)}")
+
+        if not (filter is None or isinstance(filter, str)):
+            raise TypeError(f"filter must be string or None, not {type(filter)}")
+
+        if not (
+            projection is None
+            or isinstance(projection, (Sequence, Set))
+            and all(isinstance(x, str) for x in projection)
+        ):
+            raise TypeError(
+                "projection must be a list of key names, each an instance of str"
+            )
+
+        # Initialize client
         self.api_client = _ApiClient(url)
 
         invalid_qps_in_url = (
@@ -46,11 +60,13 @@ class Sync:
         if invalid_qps_in_url:
             raise QueryError(f"Invalid qps in url: {invalid_qps_in_url}")
 
-        self.filter = filter
-        self.projection = projection
-        self.start: Union[float, None] = None
+        self.qp = {
+            "filter": filter,
+            "projection": projection,
+            "sort": "_id",
+        }
 
-        self.seek(start)
+        self.start = self._seek(start)
 
     def read(
         self,
@@ -62,13 +78,19 @@ class Sync:
 
         Events are returned sorted by insertion time.
         """
+        if not (token is None or isinstance(token, str)):
+            raise TypeError(f"token must be string or None, not {type(token)}")
+
+        if not isinstance(pagesize, int):
+            raise TypeError(f"pagesize must be int not {type(pagesize)}")
+
         qp = _remove_none_values(
             {
-                "filter": self.filter,
-                "projection": self.projection,
-                "token": token,
-                "limit": pagesize if pagesize != 0 else None,
-                "sort": "_id",
+                **self.qp,
+                **{
+                    "token": token,
+                    "limit": pagesize if pagesize != 0 else None,
+                },
             }
         )
 
@@ -86,16 +108,24 @@ class Sync:
 
     def seek(self, ts: Union[datetime, int, float, None]) -> None:
         """Set sync start to specific time."""
+        self.start = self._seek(ts)
+
+    def _seek(self, ts: Union[datetime, int, float, None]) -> float:
+        """Set sync start to specific time."""
+        if not (ts is None or isinstance(ts, (int, float, datetime))):
+            raise TypeError(f"ts must be int, float, datetime or None, not {type(ts)}")
+
         if ts is None:
-            self.start = time.time()
+            return time.time()
+        elif isinstance(ts, (int, float)):
+            return float(ts)
         else:
-            self.start = _build_start_end(ts)
+            return ts.timestamp()
 
 
 class Query:
     """Query events from sharing API."""
 
-    # Allowed query parameters
     allowed_user_provided_qps = {
         "filter",
         "projection",
@@ -106,6 +136,11 @@ class Query:
     }
 
     def __init__(self, url: str):
+        # Check args
+        if not isinstance(url, str):
+            raise TypeError(f"url must be string not {type(url)}")
+
+        # Initialize client
         self.api_client = _ApiClient(url)
 
         invalid_qps_in_url = (
@@ -122,13 +157,44 @@ class Query:
         start: Union[datetime, int, float, None] = None,
         end: Union[datetime, int, float, None] = None,
         reverse: bool = False,
-        max_events: Optional[int] = None,
+        max_events: int = 0,
         **kwargs: Any,
     ) -> Iterable[Event]:
         """Query sharing API.
 
         Events are returned sorted by timestamp.
         """
+        if not (filter is None or isinstance(filter, str)):
+            raise TypeError(f"filter must be string or None, not {type(filter)}")
+
+        if not (
+            projection is None
+            or isinstance(projection, (Sequence, Set))
+            and all(isinstance(x, str) for x in projection)
+        ):
+            raise TypeError(
+                "projection must be a list of key names, each an instance of str"
+            )
+
+        if not (start is None or isinstance(start, (int, float, datetime))):
+            raise TypeError(
+                f"start must be int, float, datetime or None, not {type(start)}"
+            )
+
+        if not (end is None or isinstance(end, (int, float, datetime))):
+            raise TypeError(
+                f"end must be int, float, datetime or None, not {type(end)}"
+            )
+
+        if not isinstance(reverse, bool):
+            raise TypeError(f"reverse must be bool, not {type(bool)}")
+
+        if not isinstance(max_events, int):
+            raise TypeError(f"max_events must be int, not {type(max_events)}")
+
+        if not isinstance(kwargs.get("pagesize", 0), int):
+            raise TypeError(f"pagesize must be int, not {type(kwargs.get('pagesize'))}")
+
         qp = _remove_none_values(
             {
                 "filter": filter,
@@ -160,7 +226,7 @@ class Query:
             for event in events:
                 yield event
                 n_events += 1
-                if max_events and n_events == max_events:
+                if 0 < max_events <= n_events:
                     more = False
                     break
 
