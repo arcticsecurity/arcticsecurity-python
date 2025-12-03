@@ -30,7 +30,14 @@ class Sync:
         "token",
     }
 
-    def __init__(self, url: str):
+    def __init__(
+        self,
+        url: str,
+        *,
+        filter: Optional[str] = None,
+        projection: Optional[Sequence[str]] = None,
+        start: Union[datetime, int, float, None] = None,
+    ):
         self.api_client = _ApiClient(url)
 
         invalid_qps_in_url = (
@@ -39,11 +46,15 @@ class Sync:
         if invalid_qps_in_url:
             raise QueryError(f"Invalid qps in url: {invalid_qps_in_url}")
 
+        self.filter = filter
+        self.projection = projection
+        self.start: Union[float, None] = None
+
+        self.seek(start)
+
     def read(
         self,
         *,
-        filter: Optional[str] = None,
-        projection: Optional[Sequence[str]] = None,
         token: Optional[str] = None,
         pagesize: int = 1000,
     ) -> tuple[list[Event], Optional[str]]:
@@ -53,26 +64,32 @@ class Sync:
         """
         qp = _remove_none_values(
             {
-                "filter": filter,
-                "projection": projection,
+                "filter": self.filter,
+                "projection": self.projection,
                 "token": token,
                 "limit": pagesize if pagesize != 0 else None,
                 "sort": "_id",
             }
         )
 
-        # If token is missing, default to current time
         if "token" not in qp:
-            qp["start"] = time.time()
+            qp["start"] = self.start
 
         resp = self.api_client.async_query(qp)
 
         try:
             token = resp.headers["x-next-token"]
         except KeyError:
-            token = resp.headers["x-last-inserted-token"]
+            token = resp.headers.get("x-last-inserted-token", None)
 
         return resp.json(), token
+
+    def seek(self, ts: Union[datetime, int, float, None]) -> None:
+        """Set sync start to specific time."""
+        if ts is None:
+            self.start = time.time()
+        else:
+            self.start = _build_start_end(ts)
 
 
 class Query:
@@ -157,11 +174,11 @@ def _remove_none_values(d: dict[str, Optional[Any]]) -> dict[str, Any]:
     return {k: v for k, v in d.items() if v is not None}
 
 
-def _build_start_end(t: Union[datetime, int, float, None]) -> Union[int, float, None]:
+def _build_start_end(ts: Union[datetime, int, float, None]) -> Union[int, float, None]:
     """Build start / end query parameter."""
-    if t is None:
+    if ts is None:
         return None
-    elif isinstance(t, (int, float)):
-        return t
+    elif isinstance(ts, (int, float)):
+        return ts
     else:
-        return t.timestamp()
+        return ts.timestamp()
