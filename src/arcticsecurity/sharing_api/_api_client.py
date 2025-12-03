@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 
 import httpx
 
-from .errors import Error, NetworkError, QueryError, Retry
+from .errors import Error, NetworkError, QueryError, Retry, ServerError
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,10 @@ class _ApiClient:
             )
             # Server error on initial post -> suggest retrying whole query later again
             raise Retry(after=response.headers.get("Retry-After", 10))
+        elif response.status_code == 500:
+            raise ServerError(
+                f"Sharing API server error 500 for submit, {response.text}"
+            )
         elif response.status_code != 202:
             raise NetworkError(
                 f"Unexpected status {response.status_code} for submit, {response.text}"
@@ -119,6 +123,10 @@ class _ApiClient:
                 break
             elif response.status_code == 202:
                 time.sleep(int(response.headers.get("Retry-After", 1)))
+            elif response.status_code == 500:
+                raise ServerError(
+                    f"Sharing API server error 500 getting status, {response.text}"
+                )
             elif self._server_unavailable(response.status_code):
                 logger.debug(
                     f"Error getting status, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
@@ -148,6 +156,10 @@ class _ApiClient:
                 break
             elif response.status_code == 410:
                 raise Retry("Results have been fetched already")
+            elif response.status_code == 500:
+                raise ServerError(
+                    f"Sharing API server error 500 fetching results, {response.text}"
+                )
             elif self._server_unavailable(response.status_code):
                 # sleep only 1 sec since results are stored only for a limited time
                 logger.debug(
@@ -165,10 +177,10 @@ class _ApiClient:
     def _server_unavailable(status: int) -> bool:
         """Does status mean server is unavailable?
 
-        500 / 502 / 503 / 504 typically overloaded system. All of these should be
+        502 / 503 / 504 typically overloaded system. All of these should be
         transient on a valid hub url.
         """
-        return status in (500, 502, 503, 504)
+        return status in (502, 503, 504)
 
 
 @dataclass

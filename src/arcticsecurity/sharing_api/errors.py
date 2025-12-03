@@ -15,6 +15,12 @@ class QueryError(Error):
     pass
 
 
+class ServerError(Error):
+    """Error in the sharing API server."""
+
+    pass
+
+
 class NetworkError(Error):
     """Error communicating with the sharing API."""
 

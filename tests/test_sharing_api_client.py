@@ -137,7 +137,8 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(Server(url))
         api = _api_client._ApiClient(url, transport=xport)
-        with pytest.raises(errors.Retry):
+        expected_error = errors.ServerError if code == 500 else errors.Retry
+        with pytest.raises(expected_error):
             api.async_query()
 
     def test_post_no_location_header(self):
@@ -199,7 +200,7 @@ class TestApi:
         assert resp.status_code == 200
         assert resp.json() == list(chain(*events))
 
-    @pytest.mark.parametrize("code", [500, 502, 503, 504])
+    @pytest.mark.parametrize("code", [502, 503, 504])
     def test_get_status_50x_302(self, code):
         class Server(MockServer):
             def __init__(self, *args, **kwargs):
@@ -227,7 +228,8 @@ class TestApi:
         assert resp.status_code == 200
         assert resp.json() == list(chain(*events))
 
-    def test_get_status_40x(self):
+    @pytest.mark.parametrize("code", [400, 500])
+    def test_get_status_40x_500(self, code):
         class Server(MockServer):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
@@ -237,7 +239,7 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(400)
+                    return httpx.Response(code)
                 else:
                     return super().handle_get_status(request)
 
@@ -246,7 +248,8 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        with pytest.raises(errors.Retry):
+        expected_error = errors.ServerError if code == 500 else errors.Retry
+        with pytest.raises(expected_error):
             api.async_query()
 
     def test_get_status_no_locaton_header(self):
@@ -288,7 +291,7 @@ class TestApi:
         with pytest.raises(errors.Retry):
             api.async_query()
 
-    @pytest.mark.parametrize("code", [500, 502, 503, 504])
+    @pytest.mark.parametrize("code", [502, 503, 504])
     def test_get_result_50x_302(self, code):
         class Server(MockServer):
             def __init__(self, *args, **kwargs):
@@ -316,7 +319,8 @@ class TestApi:
         assert resp.status_code == 200
         assert resp.json() == list(chain(*events))
 
-    def test_get_result_40x(self):
+    @pytest.mark.parametrize("code", [400, 500])
+    def test_get_result_40x(self, code):
         class Server(MockServer):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
@@ -326,7 +330,7 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(400)
+                    return httpx.Response(code)
                 else:
                     return super().handle_get_results(request)
 
@@ -335,5 +339,6 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        with pytest.raises(errors.Retry):
+        expected_error = errors.ServerError if code == 500 else errors.Retry
+        with pytest.raises(expected_error):
             api.async_query()
