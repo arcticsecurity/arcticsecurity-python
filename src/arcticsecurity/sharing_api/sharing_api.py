@@ -47,7 +47,7 @@ class Sync:
         token: Optional[str] = None,
         start: Optional[str] = None,
         end: Optional[str] = None,
-        limit: Optional[int] = None,
+        pagesize: int = 1000,
     ) -> tuple[list[Event], Optional[str]]:
         """Sync events from sharing API
 
@@ -60,7 +60,7 @@ class Sync:
                 "token": token,
                 "start": start,
                 "end": end,
-                "limit": str(limit) if limit else None,
+                "limit": pagesize if pagesize != 0 else None,
                 "sort": "_id",
             }
         )
@@ -106,7 +106,7 @@ class Query:
         end: Optional[str] = None,
         reverse: bool = False,
         max_events: Optional[int] = None,
-        limit: Optional[int] = None,
+        **kwargs: Any,
     ) -> Iterable[Event]:
         """Query sharing API.
 
@@ -119,7 +119,7 @@ class Query:
                 "start": start,
                 "end": end,
                 "reverse": "" if reverse else None,
-                "limit": str(limit) if limit else None,
+                "limit": kwargs.get("pagesize", 1000),
             }
         )
 
