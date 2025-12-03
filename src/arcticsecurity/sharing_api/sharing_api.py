@@ -8,6 +8,7 @@ TODO:
 
 import logging
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from typing import Any, Optional, Union
 
 from ._api_client import _ApiClient
@@ -102,8 +103,8 @@ class Query:
         *,
         filter: Optional[str] = None,
         projection: Optional[Sequence[str]] = None,
-        start: Optional[str] = None,
-        end: Optional[str] = None,
+        start: Union[datetime, int, None] = None,
+        end: Union[datetime, int, None] = None,
         reverse: bool = False,
         max_events: Optional[int] = None,
         **kwargs: Any,
@@ -116,8 +117,8 @@ class Query:
             {
                 "filter": filter,
                 "projection": projection,
-                "start": start,
-                "end": end,
+                "start": _build_start_end(start),
+                "end": _build_start_end(end),
                 "reverse": "" if reverse else None,
                 "limit": kwargs.get("pagesize", 1000),
             }
@@ -155,3 +156,13 @@ def query(url: str, **kwargs: Any) -> Iterable[Event]:
 
 def _remove_none_values(d: dict[str, Optional[Any]]) -> dict[str, Any]:
     return {k: v for k, v in d.items() if v is not None}
+
+
+def _build_start_end(t: Union[datetime, int]) -> Optional[int]:
+    """Build start / end query parameter."""
+    if t is None:
+        return None
+    elif isinstance(t, int):
+        return t
+    else:
+        return t.timemstamp()
