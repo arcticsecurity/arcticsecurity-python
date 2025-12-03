@@ -83,7 +83,6 @@ class Query:
         "filter",
         "projection",
         "limit",
-        "token",
         "start",
         "end",
         "reverse",
@@ -103,7 +102,6 @@ class Query:
         *,
         filter: Optional[str] = None,
         projection: Optional[Union[str, Sequence[str]]] = None,
-        token: Optional[str] = None,
         start: Optional[str] = None,
         end: Optional[str] = None,
         reverse: bool = False,
@@ -118,7 +116,6 @@ class Query:
             {
                 "filter": filter,
                 "projection": projection,
-                "token": token,
                 "start": start,
                 "end": end,
                 "reverse": "" if reverse else None,
@@ -132,11 +129,16 @@ class Query:
 
         while more:
             resp = self.api_client.async_query(qp)
-            token = resp.headers.get("x-next-token")
-            more = bool(token)
-            qp["token"] = token
             events = resp.json()
             logger.debug(f"queried, got {len(events)} events")
+
+            try:
+                token = resp.headers["x-next-token"]
+            except KeyError:
+                more = False
+            else:
+                qp["token"] = token
+                more = True
 
             for event in events:
                 yield event
