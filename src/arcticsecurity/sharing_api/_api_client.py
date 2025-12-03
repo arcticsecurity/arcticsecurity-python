@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 
 import httpx
 
+from . import _version
 from .errors import Error, NetworkError, QueryError, Retry, ServerError
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,13 @@ class _ApiClient:
         self,
         url: str,
         *,
+        user_agent: Optional[str] = None,
         transport: Optional[httpx.BaseTransport] = None,
         sleep_before_first_status_query: float = 0.5,
         sleep_after_50x_error_within_query: float = 10,
     ):
         self.urls = _ShareUrls(url)
+        self.user_agent = user_agent or _version.user_agent
 
         # Transport to use in httpx client. Should only be defined in testing
         self.transport = transport
@@ -52,12 +55,11 @@ class _ApiClient:
 
     def _get_client(self) -> httpx.Client:
         """Initiaze new client."""
-        # TODO add agent or similar
         return httpx.Client(
             base_url=self.urls.base_url,
             follow_redirects=True,
             timeout=60,
-            headers={**self.urls.authorization_header},
+            headers={**self.urls.authorization_header, "USER-AGENT": self.user_agent},
             transport=self.transport,
         )
 

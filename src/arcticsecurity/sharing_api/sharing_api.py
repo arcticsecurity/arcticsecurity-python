@@ -34,6 +34,7 @@ class Sync:
         filter: Optional[str] = None,
         projection: Optional[Sequence[str]] = None,
         start: Union[datetime, int, float, None] = None,
+        **kwargs: Any,
     ):
         # Check args
         if not isinstance(url, str):
@@ -51,8 +52,14 @@ class Sync:
                 "projection must be a list of key names, each an instance of str"
             )
 
+        user_agent = kwargs.get("user_agent")
+        if not (user_agent is None or isinstance(user_agent, str)):
+            raise TypeError(
+                f"user_agent must be string or None, not {type(user_agent)}"
+            )
+
         # Initialize client
-        self.api_client = _ApiClient(url)
+        self.api_client = _ApiClient(url, user_agent=user_agent)
 
         invalid_qps_in_url = (
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
@@ -135,13 +142,19 @@ class Query:
         "reverse",
     }
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, **kwargs: Any):
         # Check args
         if not isinstance(url, str):
             raise TypeError(f"url must be string not {type(url)}")
 
+        user_agent = kwargs.get("user_agent")
+        if not (user_agent is None or isinstance(user_agent, str)):
+            raise TypeError(
+                f"user_agent must be string or None, not {type(user_agent)}"
+            )
+
         # Initialize client
-        self.api_client = _ApiClient(url)
+        self.api_client = _ApiClient(url, user_agent=user_agent)
 
         invalid_qps_in_url = (
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
