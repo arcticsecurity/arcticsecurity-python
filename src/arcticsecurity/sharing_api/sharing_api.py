@@ -7,6 +7,7 @@ TODO:
 """
 
 import logging
+import time
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any, Optional, Union
@@ -27,8 +28,6 @@ class Sync:
         "projection",
         "limit",
         "token",
-        "start",
-        "end",
     }
 
     def __init__(self, url: str):
@@ -46,8 +45,6 @@ class Sync:
         filter: Optional[str] = None,
         projection: Optional[Sequence[str]] = None,
         token: Optional[str] = None,
-        start: Optional[str] = None,
-        end: Optional[str] = None,
         pagesize: int = 1000,
     ) -> tuple[list[Event], Optional[str]]:
         """Sync events from sharing API
@@ -59,12 +56,14 @@ class Sync:
                 "filter": filter,
                 "projection": projection,
                 "token": token,
-                "start": start,
-                "end": end,
                 "limit": pagesize if pagesize != 0 else None,
                 "sort": "_id",
             }
         )
+
+        # If token is missing, default to current time
+        if "token" not in qp:
+            qp["start"] = time.time()
 
         resp = self.api_client.async_query(qp)
 
@@ -103,8 +102,8 @@ class Query:
         *,
         filter: Optional[str] = None,
         projection: Optional[Sequence[str]] = None,
-        start: Union[datetime, int, None] = None,
-        end: Union[datetime, int, None] = None,
+        start: Union[datetime, int, float, None] = None,
+        end: Union[datetime, int, float, None] = None,
         reverse: bool = False,
         max_events: Optional[int] = None,
         **kwargs: Any,
@@ -158,11 +157,11 @@ def _remove_none_values(d: dict[str, Optional[Any]]) -> dict[str, Any]:
     return {k: v for k, v in d.items() if v is not None}
 
 
-def _build_start_end(t: Union[datetime, int]) -> Optional[int]:
+def _build_start_end(t: Union[datetime, int, float, None]) -> Union[int, float, None]:
     """Build start / end query parameter."""
     if t is None:
         return None
-    elif isinstance(t, int):
+    elif isinstance(t, (int, float)):
         return t
     else:
-        return t.timemstamp()
+        return t.timestamp()
