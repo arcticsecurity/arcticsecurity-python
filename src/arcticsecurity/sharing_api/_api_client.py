@@ -51,6 +51,9 @@ class Query:
     _client: httpx.Client
     timeout: Timeout
 
+    # Query details for introspection
+    post_url: Optional[httpx.URL] = None
+
     def __enter__(self) -> "Query":
         self._client.__enter__()
         self.timeout.start()
@@ -150,6 +153,7 @@ class _ApiClient:
         """
         try:
             response = query.client.post(url=self.urls.async_path, params=params)
+            query.post_url = response.request.url
         except httpx.RequestError as error:
             raise NetworkError(f"Downloading {error.request.url} failed: {error}")
 
@@ -228,7 +232,8 @@ class _ApiClient:
                 )
                 time.sleep(self.sleep_after_50x_error_within_query)
             elif self._is_invalid_token_error(response):
-                raise InvalidTokenError(response.request.url.params.get("token"))
+                assert query.post_url is not None
+                raise InvalidTokenError(query.post_url.params.get("token"))
             else:
                 raise Retry(
                     f"Unexpected status {response.status_code} fetching results, {response.text}"
@@ -256,7 +261,7 @@ class _ApiClient:
 
         try:
             for error in response.json().get("errors", ()):
-                if error.get("key") == "token" and error("message", "").startswith(
+                if error.get("key") == "token" and error.get("message", "").startswith(
                     "Invalid token"
                 ):
                     return True
