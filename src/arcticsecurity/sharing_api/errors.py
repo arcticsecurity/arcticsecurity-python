@@ -15,6 +15,12 @@ class ConfigError(Error):
     pass
 
 
+class InvalidTokenError(Error):
+    """Invalid token in query."""
+
+    pass
+
+
 class ServerError(Error):
     """Error in the sharing API server."""
 

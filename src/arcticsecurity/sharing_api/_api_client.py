@@ -2,6 +2,7 @@
 Sharing API client.
 """
 
+import json
 import logging
 import re
 import time
@@ -14,7 +15,15 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 import httpx
 
 from . import _version
-from .errors import ConfigError, Error, NetworkError, Retry, ServerError, TimeoutError
+from .errors import (
+    ConfigError,
+    Error,
+    InvalidTokenError,
+    NetworkError,
+    Retry,
+    ServerError,
+    TimeoutError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +227,8 @@ class _ApiClient:
                     f"Error getting results, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
                 )
                 time.sleep(self.sleep_after_50x_error_within_query)
+            elif self._is_invalid_token_error(response):
+                raise InvalidTokenError(response.request.url.params.get("token"))
             else:
                 raise Retry(
                     f"Unexpected status {response.status_code} fetching results, {response.text}"
@@ -233,6 +244,26 @@ class _ApiClient:
         transient on a valid hub url.
         """
         return status in (502, 503, 504)
+
+    @staticmethod
+    def _is_invalid_token_error(response: httpx.Response) -> bool:
+        """Does response contain "invalid token" error.
+
+        {"title": "400 Bad Request", "errors": [{"type": "storage", "key": "token", "message": "Invalid token: foo"}]}%
+        """
+        if response.status_code != 400:
+            return False
+
+        try:
+            for error in response.json().get("errors", ()):
+                if error.get("key") == "token" and error("message", "").startswith(
+                    "Invalid token"
+                ):
+                    return True
+        except json.decoder.JSONDecodeError:
+            return False
+
+        return False
 
 
 @dataclass
