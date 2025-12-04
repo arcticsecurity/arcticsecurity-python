@@ -7,7 +7,7 @@ Library to access Arctic Security Sharing API endpoints and retrieve event data.
 - Query (stream) or Sync (page) event data
 - Pagination via opaque continuation tokens
 - Filtering, projection (field selection), time range, reverse ordering (Query)
-- Robust error handling (`QueryError`, `NetworkError`, `Retry`)
+- Robust error handling (`ConfigError`, `NetworkError`, `Retry`)
 
 ## Installation
 
@@ -100,7 +100,7 @@ for e in query(url, filter="severity>=3", max_events=10):
 ## Error Handling & Retry
 
 Exceptions:
-- `QueryError`: invalid URL or parameters
+- `ConfigError`: invalid URL or parameters
 - `NetworkError`: transport/HTTP failure
 - `Retry`: transient condition; optional `Retry.after` seconds hint
 
@@ -139,7 +139,7 @@ Recommended: exponential backoff for repeated `Retry`.
 
 - Classes: `Query`, `Sync`
 - Function: `query(url, **kwargs)`
-- Exceptions: `QueryError`, `NetworkError`, `Retry`, `Error`
+- Exceptions: `ConfigError`, `NetworkError`, `Retry`, `Error`
 
 ## Development
 

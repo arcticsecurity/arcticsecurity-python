@@ -86,24 +86,24 @@ class TestApi:
 
     def test_no_apikey_in_url(self):
         url = "https://example.com/shares/v2/share-id"
-        with pytest.raises(errors.QueryError):
+        with pytest.raises(errors.ConfigError):
             _api_client._ApiClient(url)
 
     def test_many_apikeys_in_url(self):
         url = "https://example.com/shares/v2/share-id?apikey=k1&apikey=k2"
-        with pytest.raises(errors.QueryError):
+        with pytest.raises(errors.ConfigError):
             _api_client._ApiClient(url)
 
     def test_invalid_qp_in_url(self):
         url = "https://example.com/shares/v2/share-id?apikey=k1&foo=bar"
         api = _api_client._ApiClient(url)
-        with pytest.raises(errors.QueryError):
+        with pytest.raises(errors.ConfigError):
             api.async_query()
 
     def test_invalid_qp_in_arg(self):
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         api = _api_client._ApiClient(url)
-        with pytest.raises(errors.QueryError):
+        with pytest.raises(errors.ConfigError):
             api.async_query(params={"foo": "bar"})
 
     def test_post_fails_on_network_error(self):

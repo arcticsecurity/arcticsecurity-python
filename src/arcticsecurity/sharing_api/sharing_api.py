@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Optional, Union
 
 from ._api_client import _ApiClient
-from .errors import QueryError
+from .errors import ConfigError
 
 logger = logging.getLogger(__name__)
 Event = dict[str, Union[str, list[str]]]
@@ -63,7 +63,7 @@ class Sync:
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
         )
         if invalid_qps_in_url:
-            raise QueryError(f"Invalid qps in url: {invalid_qps_in_url}")
+            raise ConfigError(f"Invalid qps in url: {invalid_qps_in_url}")
 
         self.qp = {
             "filter": filter,
@@ -162,7 +162,7 @@ class Query:
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
         )
         if invalid_qps_in_url:
-            raise QueryError(f"Invalid qps in url: {invalid_qps_in_url}")
+            raise ConfigError(f"Invalid qps in url: {invalid_qps_in_url}")
 
     def query(
         self,

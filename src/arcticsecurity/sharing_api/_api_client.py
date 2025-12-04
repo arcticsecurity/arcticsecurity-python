@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 import httpx
 
 from . import _version
-from .errors import Error, NetworkError, QueryError, Retry, ServerError, TimeoutError
+from .errors import ConfigError, Error, NetworkError, Retry, ServerError, TimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ class _ApiClient:
         qp = {**self.urls.qp, **(params or {})}
         invalid_params = qp.keys() - self.allowed_params
         if invalid_params:
-            raise QueryError(f"Invalid query parameters: {invalid_params}")
+            raise ConfigError(f"Invalid query parameters: {invalid_params}")
 
         with self._init_query(timeout) as query:
             status_url = self._async_post_query(query, qp)
@@ -263,9 +263,9 @@ class _ShareUrls:
         qp = parse_qs(o.query, keep_blank_values=True)
 
         if "apikey" not in qp:
-            raise QueryError("API share url must have apikey parameter")
+            raise ConfigError("API share url must have apikey parameter")
         elif len(qp["apikey"]) > 1:
-            raise QueryError("API share url must have exactly one apikey parameter")
+            raise ConfigError("API share url must have exactly one apikey parameter")
 
         self.base_url = urlunparse(o._replace(path="", query=""))
         self.sync_path = o.path

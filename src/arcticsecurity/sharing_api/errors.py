@@ -9,7 +9,7 @@ class Error(Exception):
     pass
 
 
-class QueryError(Error):
+class ConfigError(Error):
     """User error in query configuration."""
 
     pass

@@ -131,7 +131,7 @@ class TestQuery:
         sid = "share-id"
         url = f"https://example.com/shares/v2/{sid}?apikey=api-key&foo=bar"
 
-        with pytest.raises(sharing_api.QueryError):
+        with pytest.raises(sharing_api.ConfigError):
             sharing_api.Query(url)
 
     def test_sort_not_allowed_in_url(self):
@@ -139,7 +139,7 @@ class TestQuery:
         sid = "share-id"
         url = f"https://example.com/shares/v2/{sid}?apikey=api-key&sort=key"
 
-        with pytest.raises(sharing_api.QueryError):
+        with pytest.raises(sharing_api.ConfigError):
             sharing_api.Query(url)
 
     def test_apikey_missing_from_url(self):
@@ -147,7 +147,7 @@ class TestQuery:
         sid = "share-id"
         url = f"https://example.com/shares/v2/{sid}?foo=bar"
 
-        with pytest.raises(sharing_api.QueryError):
+        with pytest.raises(sharing_api.ConfigError):
             sharing_api.Query(url)
 
 
