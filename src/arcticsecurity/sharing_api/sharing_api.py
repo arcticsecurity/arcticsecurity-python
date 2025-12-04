@@ -50,11 +50,14 @@ class Sync:
                 "projection must be a list of key names, each an instance of str"
             )
 
-        user_agent = kwargs.get("user_agent")
+        user_agent = kwargs.pop("user_agent", None)
         if not (user_agent is None or isinstance(user_agent, str)):
             raise TypeError(
                 f"user_agent must be string or None, not {type(user_agent)}"
             )
+
+        if kwargs:
+            raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
 
         # Initialize client
         self.api_client = _ApiClient(url, user_agent=user_agent)
@@ -149,11 +152,14 @@ class Query:
         if not isinstance(url, str):
             raise TypeError(f"url must be string not {type(url)}")
 
-        user_agent = kwargs.get("user_agent")
+        user_agent = kwargs.pop("user_agent", None)
         if not (user_agent is None or isinstance(user_agent, str)):
             raise TypeError(
                 f"user_agent must be string or None, not {type(user_agent)}"
             )
+
+        if kwargs:
+            raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
 
         # Initialize client
         self.api_client = _ApiClient(url, user_agent=user_agent)
@@ -211,8 +217,12 @@ class Query:
         if not (timeout is None or isinstance(timeout, (int, float))):
             raise TypeError(f"timeout must be float or None, not {type(timeout)}")
 
-        if not isinstance(kwargs.get("pagesize", 0), int):
+        pagesize = kwargs.pop("pagesize", 1000)
+        if not isinstance(pagesize, int):
             raise TypeError(f"pagesize must be int, not {type(kwargs.get('pagesize'))}")
+
+        if kwargs:
+            raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
 
         qp = _remove_none_values(
             {
@@ -221,7 +231,7 @@ class Query:
                 "start": _build_start_end(start),
                 "end": _build_start_end(end),
                 "reverse": "" if reverse else None,
-                "limit": kwargs.get("pagesize", 1000),
+                "limit": pagesize,
             }
         )
 
