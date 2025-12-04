@@ -23,7 +23,7 @@ Python >= 3.9 is required.
 ### Query
 
 ```python
-from arcticsecurity.sharing_api import Sync
+from arcticsecurity.sharing_api import Query
 
 url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
 for event in Query(url).query(filter='"network owner"="Example Co"', max_events=50):
@@ -34,7 +34,7 @@ for event in Query(url).query(filter='"network owner"="Example Co"', max_events=
 
 ```python
 from datetime import datetime, timezone
-from arcticsecurity.sharing_api import Query
+from arcticsecurity.sharing_api import Sync
 
 url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
 sync = Sync(url, filter='"network owner"="Example Co"', start=datetime(2025, 12, 1, tzinfo=timezone.utc))
@@ -43,7 +43,7 @@ sync = Sync(url, filter='"network owner"="Example Co"', start=datetime(2025, 12,
 token = None
 
 while True:
-    token, events = sync.read(token=token)
+    events, token = sync.read(token=token, pagesize=1000)
     # process events
     if not events:
         break
@@ -60,6 +60,8 @@ Parameters:
 - `reverse`: newest first if `True`
 - `max_events`: max number of events to return (0 means unlimited)
 - `timeout`: max seconds to wait for each backend event retrieval (default 600)
+- `pagesize`: max events per page requested from backend (default 1000)
+- `user_agent`: custom user agent string (optional, set on constructor)
 
 Projection example:
 
@@ -118,6 +120,12 @@ while True:
         break
 ```
 
+Custom user agent and timeout:
+
+```python
+sync = Sync(url, user_agent="my-app/1.0")
+events, token = sync.read(timeout=120)
+```
 
 ## Error Handling & Retry
 
@@ -146,6 +154,12 @@ Synchronizing the events cannot be continued with the invalid token. Here's one 
 - If `InvalidTokenError`, `seek()` to the latest `insertion time` and continue from there
 
 ```python
+from datetime import datetime, timezone
+from arcticsecurity.sharing_api import Sync
+from arcticsecurity.sharing_api.errors import InvalidTokenError
+
+sync = Sync(url)
+
 while True:
     try:
         events, token = sync.read(token=token, pagesize=100)
@@ -156,9 +170,8 @@ while True:
         sync.seek(dt)
     else:
         # process events...
-        
+        ...
 ```
-
 
 ## Event Ordering
 
