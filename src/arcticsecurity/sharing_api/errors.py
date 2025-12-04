@@ -27,6 +27,12 @@ class NetworkError(Error):
     pass
 
 
+class TimeoutError(Error):
+    """Query timed out."""
+
+    pass
+
+
 class Retry(NetworkError):
     """Network error that should be retried."""
 

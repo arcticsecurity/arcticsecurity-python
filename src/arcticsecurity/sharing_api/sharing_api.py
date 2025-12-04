@@ -2,8 +2,6 @@
 TODO:
     - user-defined timeout
       - for query() or one phase?
-    - start, end, support datetime / int
-    - error handling, retries?
 """
 
 import logging
@@ -80,6 +78,7 @@ class Sync:
         *,
         token: Optional[str] = None,
         pagesize: int = 1000,
+        timeout: Optional[float] = 600,
     ) -> tuple[list[Event], Optional[str]]:
         """Sync events from sharing API
 
@@ -90,6 +89,9 @@ class Sync:
 
         if not isinstance(pagesize, int):
             raise TypeError(f"pagesize must be int not {type(pagesize)}")
+
+        if not (timeout is None or isinstance(timeout, (int, float))):
+            raise TypeError(f"timeout must be float or None, not {type(timeout)}")
 
         qp = _remove_none_values(
             {
@@ -104,7 +106,7 @@ class Sync:
         if "token" not in qp:
             qp["start"] = self.start
 
-        resp = self.api_client.async_query(qp)
+        resp = self.api_client.async_query(qp, timeout=timeout)
 
         try:
             token = resp.headers["x-next-token"]
@@ -171,6 +173,7 @@ class Query:
         end: Union[datetime, int, float, None] = None,
         reverse: bool = False,
         max_events: int = 0,
+        timeout: Optional[float] = 600,
         **kwargs: Any,
     ) -> Iterable[Event]:
         """Query sharing API.
@@ -205,6 +208,9 @@ class Query:
         if not isinstance(max_events, int):
             raise TypeError(f"max_events must be int, not {type(max_events)}")
 
+        if not (timeout is None or isinstance(timeout, (int, float))):
+            raise TypeError(f"timeout must be float or None, not {type(timeout)}")
+
         if not isinstance(kwargs.get("pagesize", 0), int):
             raise TypeError(f"pagesize must be int, not {type(kwargs.get('pagesize'))}")
 
@@ -224,7 +230,7 @@ class Query:
         n_events = 0
 
         while more:
-            resp = self.api_client.async_query(qp)
+            resp = self.api_client.async_query(qp, timeout=timeout)
             events = resp.json()
             logger.debug(f"queried, got {len(events)} events")
 

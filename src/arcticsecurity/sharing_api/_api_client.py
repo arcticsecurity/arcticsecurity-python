@@ -7,15 +7,59 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Union
+from types import TracebackType
+from typing import Any, Optional, Union
 from urllib.parse import parse_qs, urlparse, urlunparse
 
 import httpx
 
 from . import _version
-from .errors import Error, NetworkError, QueryError, Retry, ServerError
+from .errors import Error, NetworkError, QueryError, Retry, ServerError, TimeoutError
 
 logger = logging.getLogger(__name__)
+
+
+class Timeout:
+    def __init__(self, timeout: Optional[float]):
+        self._max_duration = timeout or 0
+        self._start_ts = time.monotonic()
+
+    def start(self) -> None:
+        self._start_ts = time.monotonic()
+
+    def stop(self) -> None:
+        pass
+
+    def check(self) -> None:
+        if 0 < self._max_duration < time.monotonic() - self._start_ts:
+            raise TimeoutError("Query timed out")
+
+
+@dataclass
+class Query:
+    """Handle one 3-phase async query."""
+
+    _client: httpx.Client
+    timeout: Timeout
+
+    def __enter__(self) -> "Query":
+        self._client.__enter__()
+        self.timeout.start()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> Any:
+        self.timeout.stop()
+        return self._client.__exit__(exc_type, exc, tb)
+
+    @property
+    def client(self) -> httpx.Client:
+        self.timeout.check()
+        return self._client
 
 
 class _ApiClient:
@@ -63,8 +107,16 @@ class _ApiClient:
             transport=self.transport,
         )
 
+    def _init_query(self, timeout: Optional[float]) -> Query:
+        return Query(
+            self._get_client(),
+            Timeout(timeout),
+        )
+
     def async_query(
-        self, params: Optional[dict[str, Union[str, Sequence[str]]]] = None
+        self,
+        params: Optional[dict[str, Union[str, Sequence[str]]]] = None,
+        timeout: Optional[float] = None,
     ) -> httpx.Response:
         """Execute 3-phase async query."""
         qp = {**self.urls.qp, **(params or {})}
@@ -72,15 +124,15 @@ class _ApiClient:
         if invalid_params:
             raise QueryError(f"Invalid query parameters: {invalid_params}")
 
-        with self._get_client() as client:
-            status_url = self._async_post_query(client, qp)
+        with self._init_query(timeout) as query:
+            status_url = self._async_post_query(query, qp)
             time.sleep(self.sleep_before_first_status_query)
-            result_url = self._async_get_result_url(client, status_url)
-            return self._async_get_result_response(client, result_url)
+            result_url = self._async_get_result_url(query, status_url)
+            return self._async_get_result_response(query, result_url)
 
     def _async_post_query(
         self,
-        client: httpx.Client,
+        query: Query,
         params: Optional[dict[str, Union[str, Sequence[str]]]] = None,
     ) -> str:
         """POST async query.
@@ -88,7 +140,7 @@ class _ApiClient:
         Returns status url.
         """
         try:
-            response = client.post(url=self.urls.async_path, params=params)
+            response = query.client.post(url=self.urls.async_path, params=params)
         except httpx.RequestError as error:
             raise NetworkError(f"Downloading {error.request.url} failed: {error}")
 
@@ -112,11 +164,11 @@ class _ApiClient:
         except KeyError:
             raise Error("Location header missing from response")
 
-    def _async_get_result_url(self, client: httpx.Client, url: str) -> str:
+    def _async_get_result_url(self, query: Query, url: str) -> str:
         """GET async result url from status url."""
         while True:
             try:
-                response = client.get(url=url, follow_redirects=False)
+                response = query.client.get(url=url, follow_redirects=False)
             except httpx.RequestError as error:
                 raise NetworkError(f"Downloading {error.request.url} failed: {error}")
 
@@ -144,13 +196,11 @@ class _ApiClient:
         except KeyError:
             raise Error("Location header missing from response")
 
-    def _async_get_result_response(
-        self, client: httpx.Client, url: str
-    ) -> httpx.Response:
+    def _async_get_result_response(self, query: Query, url: str) -> httpx.Response:
         """GET async result response."""
         while True:
             try:
-                response = client.get(url)
+                response = query.client.get(url)
             except httpx.RequestError as error:
                 raise NetworkError(f"Downloading {error.request.url} failed: {error}")
 
