@@ -12,6 +12,8 @@ Python >= 3.9 is required.
 
 ## Quick Start
 
+The library supports two distinct ways to retrieve events from the Sharing API: `Query` and `Sync`.
+
 ### Query
 
 Use the `Query` class to perform one-off queries for specific events.
