@@ -223,8 +223,10 @@ The library sets a default user-agent string that includes its version and platf
 
 ## Development
 
+[uv](https://docs.astral.sh/uv/) is required.
+
 ```bash
-pip install -e ".[dev]"
+uv sync --group dev
 
 ruff check .
 pytest
