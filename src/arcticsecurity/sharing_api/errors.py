@@ -28,7 +28,7 @@ class ServerError(Error):
 
 
 class NetworkError(Error):
-    """Error communicating with the sharing API."""
+    """Error communicating with the sharing API server."""
 
     pass
 

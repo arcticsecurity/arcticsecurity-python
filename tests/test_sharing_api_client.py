@@ -2,13 +2,37 @@
 Test API client.
 """
 
+import time
 from itertools import chain
 from uuid import uuid4
 
 import httpx
 import pytest
 
-from arcticsecurity.sharing_api import _api_client, errors
+from arcticsecurity.sharing_api import _api_client, _version, errors
+
+
+class TestTimeout:
+    def test_disabled(self):
+        timeout = _api_client.Timeout(None)
+        timeout.check()
+
+    def test_enabled_not_triggered(self):
+        timeout = _api_client.Timeout(1)
+        timeout.check()
+
+    def test_triggered(self):
+        timeout = _api_client.Timeout(0.001)
+        time.sleep(0.01)
+        with pytest.raises(errors.TimeoutError):
+            timeout.check()
+
+    def test_start(self):
+        """Test start() resets start time."""
+        timeout = _api_client.Timeout(0.01)
+        time.sleep(0.02)
+        timeout.start()
+        timeout.check()
 
 
 class MockServer:
@@ -341,4 +365,177 @@ class TestApi:
         )
         expected_error = errors.ServerError if code == 500 else errors.Retry
         with pytest.raises(expected_error):
+            api.async_query()
+
+    def test_invalid_token(self):
+        token = "foo"
+
+        class Server(MockServer):
+            def handle_get_results(self, request):
+                error = {
+                    "type": "storage",
+                    "key": "token",
+                    "message": f"Invalid token: {token}",
+                }
+                return httpx.Response(400, json={"errors": [error]})
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        with pytest.raises(errors.InvalidTokenError):
+            api.async_query(params={"token": token})
+
+    def test_qp_in_url(self):
+        """Test qp provided in url is passed to the server."""
+        query = '"network owner" = "Example Co."'
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.params["filter"] == query
+                return super().handle_post_query(request)
+
+        url = f"https://example.com/shares/v2/share-id?apikey=k1&filter={query}"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query()
+
+    def test_qp_many_times_in_url(self):
+        """Test qp provided multiple times in url is included multiple times in url.
+
+        url is not included as such in requests, so test its handling.
+        """
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.query == b"projection=a&projection=b"
+                return super().handle_post_query(request)
+
+        url = (
+            "https://example.com/shares/v2/share-id?apikey=k1&projection=a&projection=b"
+        )
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query()
+
+    def test_param_into_url(self):
+        """Test qp provided in params is passed to the server."""
+        query = '"network owner" = "Example Co."'
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.params["filter"] == query
+                return super().handle_post_query(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query(params={"filter": query})
+
+    def test_url_qp_overriden_in_param(self):
+        """Test provided params override qp from url."""
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.query == b"projection=a&projection=c"
+                return super().handle_post_query(request)
+
+        url = (
+            "https://example.com/shares/v2/share-id?apikey=k1&projection=a&projection=b"
+        )
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query(params={"projection": ["a", "c"]})
+
+    def test_qp_empty_value(self):
+        """Test qp empty value is retained."""
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.params["reverse"] == ""
+                return super().handle_post_query(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1&reverse"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query()
+
+    def test_params_empty_value(self):
+        """Test params empty value is retained."""
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.params["reverse"] == ""
+                return super().handle_post_query(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query(params={"reverse": ""})
+
+    def test_timeout(self):
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(MockServer(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0.01
+        )
+        with pytest.raises(errors.TimeoutError):
+            api.async_query(timeout=0.001)
+
+    def test_default_user_agent(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.headers["USER-AGENT"] == _version.user_agent
+                return super().handle_post_query(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query()
+
+    def test_custom_user_agent(self):
+        user_agent = "foo-bar"
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.headers["USER-AGENT"] == user_agent
+                return super().handle_post_query(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url,
+            user_agent=user_agent,
+            transport=xport,
+            sleep_before_first_status_query=0,
+        )
+        api.async_query()
+
+    def test_non_ascii_user_agent(self):
+        """Test non-ascii user agent raises UnicodeError."""
+        user_agent = "foo-baré"
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(MockServer(url))
+        api = _api_client._ApiClient(
+            url,
+            user_agent=user_agent,
+            transport=xport,
+            sleep_before_first_status_query=0,
+        )
+        with pytest.raises(UnicodeError):
             api.async_query()

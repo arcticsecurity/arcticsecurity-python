@@ -46,7 +46,10 @@ class Timeout:
 
 @dataclass
 class Query:
-    """Handle one 3-phase async query."""
+    """Handle one 3-phase async query.
+
+    Check for timeout every time client is accessed.
+    """
 
     _client: httpx.Client
     timeout: Timeout
@@ -232,7 +235,7 @@ class _ApiClient:
                 )
                 time.sleep(self.sleep_after_50x_error_within_query)
             elif self._is_invalid_token_error(response):
-                assert query.post_url is not None
+                assert query.post_url is not None  # for mypy
                 raise InvalidTokenError(query.post_url.params.get("token"))
             else:
                 raise Retry(
@@ -292,10 +295,11 @@ class _ShareUrls:
 
         >>> _ShareUrls("https://example.com/shares/v2/share-id?apikey=api-key&filter=foo=bar")
         _ShareUrls(base_url='https://example.com', sync_path='/shares/v2/share-id', async_path='/shares/v2/async/share-id', authorization_header={'Authorization': 'token api-key'}, qp={'filter': ['foo=bar']})
+        >>> _ShareUrls("https://example.com/shares/v2/share-id?filter=foo=bar")
+        Traceback (most recent call last):
+        arcticsecurity.sharing_api.errors.ConfigError: API share url must have apikey parameter
         """
-        # async api doesn't support apikey; do authorization via Authorization header
         o = urlparse(sync_url)
-
         qp = parse_qs(o.query, keep_blank_values=True)
 
         if "apikey" not in qp:
