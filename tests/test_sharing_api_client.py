@@ -516,6 +516,38 @@ class TestApi:
         )
         api.async_query(params={"reverse": ""})
 
+    def test_param_int(self):
+        """Test int qp provided in params is converted to a string."""
+        start = 100
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.params["start"] == str(start)
+                return super().handle_post_query(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query(params={"start": start})
+
+    def test_param_list(self):
+        """Test list qp provided in params is converted to many strings."""
+        projection = ["a", "b"]
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                assert request.url.query == b"projection=a&projection=b"
+                return super().handle_post_query(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query(params={"projection": projection})
+
     def test_timeout(self):
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(MockServer(url))
