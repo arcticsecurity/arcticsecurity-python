@@ -2,14 +2,6 @@
 
 Library to access Arctic Security Sharing API endpoints and retrieve event data.
 
-## Features
-
-- Query or Sync event data
-- Pagination via opaque continuation tokens
-- Filtering, projection (field selection), time range, reverse ordering (Query)
-- Robust error handling (`ConfigError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`)
-- Optional timeout and user-agent customization
-
 ## Installation
 
 ```bash
@@ -30,6 +22,10 @@ for event in Query(url).query(filter='"network owner"="Example Co"', max_events=
     print(event)
 ```
 
+- Query event data
+- Filtering, projection (field selection), time range, reverse ordering
+- Sorted by event "observation time"
+
 ### Sync
 
 ```python
@@ -49,19 +45,41 @@ while True:
         break
 ```
 
+- Sync all event data
+- Pagination via opaque continuation tokens
+- Filtering, projection (field selection)
+- Sorted by database insertion time
+
+## Features
+
+- Robust error handling (`ConfigError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`)
+- Optional timeout and user-agent customization
+
 ## Query API
 
 `Query` reads events matching user provided conditions. It can be used to fetch certain kind of events from the API as one-time queries.
 
-Parameters:
+### Parameters
+
+`Query.query()` (or its shortcut `query()`) returns a generator which reads the events matching the query from the backend.
+
+It has the following parameters:
+
 - `filter`: rulelang filter expression
 - `projection`: list of event field names to include
-- `start`, `end`: timestamp boundaries (datetime, int, or float)
+- `start`, `end`: timestamp boundaries (datetime, int, or float). Defaults to full timerange.
 - `reverse`: newest first if `True`
 - `max_events`: max number of events to return (0 means unlimited)
 - `timeout`: max seconds to wait for each backend event retrieval (default 600)
 - `pagesize`: max events per page requested from backend (default 1000)
 - `user_agent`: custom user agent string (optional, set on constructor)
+
+### Timeout
+
+Timeout for query is for one retrival of batch of events from the backend. There is no timeout for the generator returned by `query()`.
+
+
+### Examples
 
 Projection example:
 
@@ -85,7 +103,7 @@ for e in Query(url, user_agent="my-app/1.0").query(timeout=120):
     print(e)
 ```
 
-Shortcut Function:
+Shortcut Function `query()`::
 
 ```python
 from arcticsecurity.sharing_api import query
@@ -98,16 +116,21 @@ for e in query(url, filter="severity=high", max_events=10):
 
 `Sync` reads all the events matching user-provided conditions, and provides tokens to enable synchronizing all the events from the API. The events are provided in database insertion order, which guarantees no events are lost.
 
-```python
-from arcticsecurity.sharing_api import Sync
+### Methods
 
-url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
-sync = Sync(url)
-events, token = sync.read(pagesize=500, filter="category=malware")
-print(f"Fetched {len(events)}; token: {token}")
-```
+`Sync.read()` is used to read the next batch of events from the API. It retuns a list of events and a continuation token.
 
-Paging loop:
+It has the following parameters:
+
+- `token`: continuation token
+- `pagesize`: rulelang filter expression
+- `timeout`: max seconds to wait for each backend event retrieval (default 600)
+
+`Sync.seek()` can be used to set initial start time for synchronization. It is used only when no token is provided for `read()`. By default synchronization starts from the current time.
+
+### Paging loop
+
+The events can be synchronized from the Sync API with a simple paging loop:
 
 ```python
 token = None
@@ -116,16 +139,32 @@ while True:
     if not events:
         break
     process(events)
-    if not token:
-        break
 ```
 
-Custom user agent and timeout:
+### Initial query
+
+On initial query `token` doesn't exist. To configure where synchronization is started from, either `start` constructor argument or `seek()` member function can be used. If start time is not configured, synchronization is started from the current time. To synchronize all the events in the database use e.g. `start=1` (`start=0` means current time).
 
 ```python
-sync = Sync(url, user_agent="my-app/1.0")
-events, token = sync.read(timeout=120)
+sync.seek(1)
+token = None
+while True:
+    events, token = sync.read(token=token, pagesize=100)
+    if not events:
+        break
+    process(events)
 ```
+
+## Sharing API url
+
+Both `Query()` and `Sync()` require share API url. The url must include `apikey` query parameter. The API key is parsed from the url and sent in `Authorization` header to the server.
+
+Example url:
+```
+url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
+```
+
+The url may also contain other valid query parameters. These are parsed and included in the backend requests. Parameters given in `Query.query()` or `Sync.read()` override the defaults configured in the url.
 
 ## Error Handling & Retry
 
@@ -154,7 +193,7 @@ Synchronizing the events cannot be continued with the invalid token. Here's one 
 - If `InvalidTokenError`, `seek()` to the latest `insertion time` and continue from there
 
 ```python
-from datetime import datetime, timezone
+import dateutil
 from arcticsecurity.sharing_api import Sync
 from arcticsecurity.sharing_api.errors import InvalidTokenError
 
@@ -164,19 +203,14 @@ while True:
     try:
         events, token = sync.read(token=token, pagesize=100)
     except InvalidTokenError:
-        last_inserted = ... # fetch from the newest event
+        last_inserted = ... # fetch from "insertion time" in the newest event
         token = None
-        dt = datetime.strptime(last_inserted, "%Y-%m-%d %H:%M:%SZ").replace(tzinfo=timezone.utc)
+        dt = dateutil.parser.parse(last_inserted)
         sync.seek(dt)
     else:
         # process events...
         ...
 ```
-
-## Event Ordering
-
-- `Query`: timestamp order (ascending unless `reverse=True`)
-- `Sync`: insertion order (stable for checkpointing)
 
 ## User Agent & Versioning
 
