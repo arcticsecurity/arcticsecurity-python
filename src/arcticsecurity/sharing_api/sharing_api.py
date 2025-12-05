@@ -4,7 +4,7 @@ Sharing API client.
 
 import logging
 import time
-from collections.abc import Iterable, Sequence, Set
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Optional, Union
 
@@ -28,7 +28,7 @@ class Sync:
         url: str,
         *,
         filter: Optional[str] = None,
-        projection: Optional[Sequence[str]] = None,
+        projection: Optional[Iterable[str]] = None,
         start: Union[datetime, int, float, None] = None,
         **kwargs: Any,
     ):
@@ -41,8 +41,11 @@ class Sync:
 
         if not (
             projection is None
-            or isinstance(projection, (Sequence, Set))
-            and all(isinstance(x, str) for x in projection)
+            or (
+                isinstance(projection, Iterable)
+                and not isinstance(projection, str)
+                and all(isinstance(x, str) for x in projection)
+            )
         ):
             raise TypeError(
                 "projection must be a list of key names, each an instance of str"
@@ -172,7 +175,7 @@ class Query:
         self,
         *,
         filter: Optional[str] = None,
-        projection: Optional[Sequence[str]] = None,
+        projection: Optional[Iterable[str]] = None,
         start: Union[datetime, int, float, None] = None,
         end: Union[datetime, int, float, None] = None,
         reverse: bool = False,
@@ -189,8 +192,11 @@ class Query:
 
         if not (
             projection is None
-            or isinstance(projection, (Sequence, Set))
-            and all(isinstance(x, str) for x in projection)
+            or (
+                isinstance(projection, Iterable)
+                and not isinstance(projection, str)
+                and all(isinstance(x, str) for x in projection)
+            )
         ):
             raise TypeError(
                 "projection must be a list of key names, each an instance of str"
