@@ -166,6 +166,8 @@ class _ApiClient:
             )
             # Server error on initial post -> suggest retrying whole query later again
             raise Retry(after=response.headers.get("Retry-After", 10))
+        elif (invalid_inputs := self._invalid_input_error(response)) is not None:
+            raise ConfigError(invalid_inputs)
         elif response.status_code == 500:
             raise ServerError(
                 f"Sharing API server error 500 for submit, {response.text}"
@@ -272,6 +274,24 @@ class _ApiClient:
             return False
 
         return False
+
+    @staticmethod
+    def _invalid_input_error(response: httpx.Response) -> Optional[Any]:
+        """If response contains "invalid inputs" error, return it.
+
+        {'title': '400 Invalid input(s)', 'description': '2 invalid input(s)', 'errors': [{'key': 'start', 'type': 'query validation', 'message': "Invalid start: ['foo']"}, {'key': 'startt', 'type': 'query validation', 'message': 'Unknown parameter: startt'}]}
+        """
+        if response.status_code != 400:
+            return None
+
+        try:
+            d = response.json()
+            if d.get("title") == "400 Invalid input(s)":
+                return d.get("errors", [])
+        except json.decoder.JSONDecodeError:
+            return None
+
+        return None
 
 
 @dataclass

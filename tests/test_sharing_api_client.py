@@ -152,6 +152,36 @@ class TestApi:
         with pytest.raises(errors.NetworkError):
             api.async_query()
 
+    def test_post_fails_on_invalid_parameters(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                errors = [
+                    {
+                        "key": "start",
+                        "type": "query validation",
+                        "message": "Invalid start: ['foo']",
+                    },
+                    {
+                        "key": "startt",
+                        "type": "query validation",
+                        "message": "Unknown parameter: startt",
+                    },
+                ]
+                return httpx.Response(
+                    400,
+                    json={
+                        "title": "400 Invalid input(s)",
+                        "description": "2 invalid input(s)",
+                        "errors": errors,
+                    },
+                )
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.ConfigError):
+            api.async_query()
+
     @pytest.mark.parametrize("code", [500, 502, 503, 504])
     def test_post_fails_on_50x(self, code):
         class Server(MockServer):

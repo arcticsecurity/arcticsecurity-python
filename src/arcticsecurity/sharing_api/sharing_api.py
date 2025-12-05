@@ -1,7 +1,5 @@
 """
-TODO:
-    - user-defined timeout
-      - for query() or one phase?
+Sharing API client.
 """
 
 import logging
