@@ -1,6 +1,6 @@
-# Arctic Security library
+# Arctic Security Library
 
-Library to access Arctic Security Sharing API endpoints and retrieve event data.
+A Python library to access Arctic Security's Sharing API endpoints and retrieve event data.
 
 ## Installation
 
@@ -14,6 +14,8 @@ Python >= 3.9 is required.
 
 ### Query
 
+Use the `Query` class to perform one-off queries for specific events.
+
 ```python
 from arcticsecurity.sharing_api import Query
 
@@ -22,66 +24,60 @@ for event in Query(url).query(filter='"network owner"="Example Co"', max_events=
     print(event)
 ```
 
-- Query event data
-- Filtering, projection (field selection), time range, reverse ordering
-- Sorted by event "observation time"
-
 ### Sync
 
+Use the `Sync` class to reliably fetch all event data. It uses pagination with opaque continuation tokens to ensure no events are missed.
+
 ```python
-from datetime import datetime, timezone
 from arcticsecurity.sharing_api import Sync
 
 url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
-sync = Sync(url, filter='"network owner"="Example Co"', start=datetime(2025, 12, 1, tzinfo=timezone.utc))
+sync = Sync(url, filter='"network owner"="Example Co"')
 
-# token can be fetched from a local storage
-token = None
+# Fetch token from previous run
+token = ...
 
 while True:
     events, token = sync.read(token=token, pagesize=1000)
-    # process events
     if not events:
         break
+    # process events...
+
+# store the token for the next run
 ```
 
-- Sync all event data
-- Pagination via opaque continuation tokens
-- Filtering, projection (field selection)
-- Sorted by database insertion time
+## Common features
 
-## Features
-
-- Robust error handling (`ConfigError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`)
+- Robust error handling with specific exceptions (`ConfigError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`).
 - Optional timeout and user-agent customization
 
 ## Query API
 
-`Query` reads events matching user provided conditions. It can be used to fetch certain kind of events from the API as one-time queries.
+The `Query` class reads events that match user-provided conditions. It is ideal for fetching specific events from the API in one-time queries.
 
 ### Parameters
 
-`Query.query()` (or its shortcut `query()`) returns a generator which reads the events matching the query from the backend.
+`Query.query()` (and its shortcut `query()`) returns a generator that reads the events matching the query from the backend.
 
-It has the following parameters:
+It accepts the following parameters:
 
-- `filter`: rulelang filter expression
-- `projection`: list of event field names to include
-- `start`, `end`: timestamp boundaries (datetime, int, or float). Defaults to full timerange.
-- `reverse`: newest first if `True`
-- `max_events`: max number of events to return (0 means unlimited)
-- `timeout`: max seconds to wait for each backend event retrieval (default 600)
-- `pagesize`: max events per page requested from backend (default 1000)
-- `user_agent`: custom user agent string (optional, set on constructor)
+- `filter`: A rulelang filter expression.
+- `projection`: A list of event field names to include in the results.
+- `start`, `end`: Timestamp boundaries for the query (can be `datetime`, `int`, or `float`). Defaults to the entire available time range.
+- `reverse`: If `True`, returns the newest events first.
+- `max_events`: The maximum number of events to return (0 means unlimited).
+- `timeout`: The maximum number of seconds to wait for each backend event retrieval (default: 600).
+- `pagesize`: The maximum number of events per page requested from the backend (default: 1000).
+- `user_agent`: An optional custom user-agent string.
 
 ### Timeout
 
-Timeout for query is for one retrival of batch of events from the backend. There is no timeout for the generator returned by `query()`.
+The `timeout` parameter applies to a single retrieval of a batch of events from the backend. There is no overall timeout for the generator returned by `query()`.
 
 
 ### Examples
 
-Projection example:
+**Projection:**
 
 ```python
 fields = ["uuid", "indicator", "severity"]
@@ -89,21 +85,21 @@ for e in Query(url).query(projection=fields):
     print(e)
 ```
 
-Reverse ordering:
+**Reverse ordering:**
 
 ```python
 for e in Query(url).query(reverse=True, max_events=10):
     print(e)
 ```
 
-Custom user agent and timeout:
+**Custom user agent and timeout:**
 
 ```python
 for e in Query(url, user_agent="my-app/1.0").query(timeout=120):
     print(e)
 ```
 
-Shortcut Function `query()`::
+**Shortcut Function `query()`:**
 
 ```python
 from arcticsecurity.sharing_api import query
@@ -114,25 +110,40 @@ for e in query(url, filter="severity=high", max_events=10):
 
 ## Sync API
 
-`Sync` reads all the events matching user-provided conditions, and provides tokens to enable synchronizing all the events from the API. The events are provided in database insertion order, which guarantees no events are lost.
+The `Sync` class reads all events matching user-provided conditions and provides tokens to enable reliable synchronization. Events are returned in database insertion order, which guarantees that no events are lost during synchronization.
 
 ### Methods
 
-`Sync.read()` is used to read the next batch of events from the API. It retuns a list of events and a continuation token.
+`Sync.read()` reads the next batch of events from the API. It returns a list of events and a continuation token.
 
-It has the following parameters:
+It accepts the following parameters:
 
-- `token`: continuation token
-- `pagesize`: rulelang filter expression
-- `timeout`: max seconds to wait for each backend event retrieval (default 600)
+- `token`: The continuation token from the previous `read()` call.
+- `pagesize`: The maximum number of events to retrieve in one batch (default: 1000).
+- `timeout`: The maximum number of seconds to wait for the backend response (default: 600).
 
-`Sync.seek()` can be used to set initial start time for synchronization. It is used only when no token is provided for `read()`. By default synchronization starts from the current time.
+`Sync.seek()` sets the initial start time for synchronization. This is only used when no `token` is provided to `read()`. By default, synchronization starts from the current time.
 
-### Paging loop
+### Paging Loop
 
-The events can be synchronized from the Sync API with a simple paging loop:
+Events can be synchronized from the Sync API with a simple paging loop. The `token` should be persisted between runs to resume synchronization.
 
 ```python
+token = None # Load the last known token from storage
+while True:
+    events, token = sync.read(token=token, pagesize=100)
+    if not events:
+        break
+    process(events)
+# Save the token for the next run
+```
+
+### Initial Query
+
+For the first query, a `token` will not exist. To configure the starting point of the synchronization, use either the `start` constructor argument or the `seek()` method. If no start time is configured, synchronization begins from the current time. To synchronize all events in the database, use a `start` time of `1` (a value of `0` means the current time).
+
+```python
+sync.seek(1) # Start from the beginning of time
 token = None
 while True:
     events, token = sync.read(token=token, pagesize=100)
@@ -141,101 +152,94 @@ while True:
     process(events)
 ```
 
-### Initial query
+## Sharing API URL
 
-On initial query `token` doesn't exist. To configure where synchronization is started from, either `start` constructor argument or `seek()` member function can be used. If start time is not configured, synchronization is started from the current time. To synchronize all the events in the database use e.g. `start=1` (`start=0` means current time).
+Both `Query()` and `Sync()` require a share API URL. The URL must include an `apikey` query parameter. The API key is parsed from the URL and sent in the `Authorization` header.
 
-```python
-sync.seek(1)
-token = None
-while True:
-    events, token = sync.read(token=token, pagesize=100)
-    if not events:
-        break
-    process(events)
-```
+Example URL:
+`https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY`
 
-## Sharing API url
-
-Both `Query()` and `Sync()` require share API url. The url must include `apikey` query parameter. The API key is parsed from the url and sent in `Authorization` header to the server.
-
-Example url:
-```
-url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
-```
-
-The url may also contain other valid query parameters. These are parsed and included in the backend requests. Parameters given in `Query.query()` or `Sync.read()` override the defaults configured in the url.
+The URL may also contain other valid query parameters. These are parsed and included in the backend requests. Parameters provided in `Query.query()` or `Sync.read()` override any defaults set in the URL.
 
 ## Error Handling & Retry
 
-Exceptions:
-- `ConfigError`: invalid URL or parameters
-- `NetworkError`: transport/HTTP failure
-- `Retry`: transient condition; optional `Retry.after` seconds hint
-- `TimeoutError`: query timed out
-- `InvalidTokenError`: invalid token in query
-- `ServerError`: server-side error
-- `Error`: base exception
+The library raises the following exceptions:
+
+- `ConfigError`: Invalid URL or parameters.
+- `NetworkError`: Transport or HTTP failure.
+- `Retry`: A transient condition occurred; the request can be retried. The exception may include a `after` attribute with a suggested delay in seconds.
+- `TimeoutError`: The query timed out.
+- `InvalidTokenError`: The continuation token is invalid.
+- `ServerError`: A server-side error occurred.
+- `Error`: The base exception for all library-specific errors.
 
 
 ### `InvalidTokenError`
 
-`InvalidTokenError` may be raised in case the event the token points to does not exist in the server. There may be various reasons for this error:
+`InvalidTokenError` may be raised if the event the token points to no longer exists on the server. This can happen if:
 
-- token has not been obtained from the server
-- event has been deleted by e.g. database management
-- event has expired via TTL
+- The token is malformed or has not been obtained from the server.
+- The event has been deleted by database management.
+- The event has expired due to a TTL policy.
 
-Synchronizing the events cannot be continued with the invalid token. Here's one way to tackle this problem.
-
-- Synchonize events with `Sync.read()` normally
-- Keep track of `insertion time` in the events
-- If `InvalidTokenError`, `seek()` to the latest `insertion time` and continue from there
+Synchronization cannot be continued with an invalid token. One way to handle this is to restart the synchronization from the timestamp of the last successfully processed event.
 
 ```python
-import dateutil
+import dateutil.parser
 from arcticsecurity.sharing_api import Sync
 from arcticsecurity.sharing_api.errors import InvalidTokenError
 
 sync = Sync(url)
+token = None # Load token from storage
+last_inserted = None # Load last insertion time from storage
 
 while True:
     try:
         events, token = sync.read(token=token, pagesize=100)
     except InvalidTokenError:
-        last_inserted = ... # fetch from "insertion time" in the newest event
-        token = None
-        dt = dateutil.parser.parse(last_inserted)
-        sync.seek(dt)
+        if last_inserted:
+            # Reset the token and seek to the last known insertion time
+            token = None
+            dt = dateutil.parser.parse(last_inserted)
+            sync.seek(dt)
+        else:
+            # Cannot recover, handle the error (e.g., log and exit)
+            raise
     else:
-        # process events...
-        ...
+        if events:
+            # Process events and update the last known insertion time
+            last_inserted = events[-1]["insertion time"]
+            # Persist token and last_inserted
+        else:
+            # No more events
+            break
 ```
 
 ## User Agent & Versioning
 
-The library sets a default user agent string including version and platform info. You can override it with the `user_agent` parameter to the class constructors.
+The library sets a default user-agent string that includes its version and platform information. You can override this by passing the `user_agent` parameter to the class constructors.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
+
 ruff check .
 pytest
 ```
 
 ## Roadmap
 
-- CHANGELOG and semantic versioning commitment
+- Add a `CHANGELOG` and commit to semantic versioning.
 
 ## Contributing
 
-Issues and pull requests welcome. Add tests for new behavior.
+Issues and pull requests are welcome. Please add tests for any new behavior.
 
 ## License
 
-Add a `LICENSE` file (e.g. MIT or Apache-2.0) and reference it here.
+Add a `LICENSE` file (e.g., MIT or Apache-2.0) and reference it here.
 
 ## Status
 
-Experimental (`0.1.x`); API may evolve. Pin versions for production use.
+Experimental (`0.1.x`); the API may evolve. Pin the library version for production use.
