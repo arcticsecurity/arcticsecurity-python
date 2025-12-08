@@ -32,6 +32,16 @@ class Sync:
         start: Union[datetime, int, float, None] = None,
         **kwargs: Any,
     ):
+        """
+        Initialize Sync class.
+
+        Args:
+            url: Sharing API url, must include `apikey` query parameter.
+            filter: Rulelang filter.
+            projection: List of event field names to include in the results.
+            start: Start time for the initial query. Can also be set with seek().
+        """
+
         # Check args
         if not isinstance(url, str):
             raise TypeError(f"url must be string not {type(url)}")
@@ -87,6 +97,14 @@ class Sync:
         """Sync events from sharing API
 
         Events are returned sorted by insertion time.
+
+        Args:
+            token: Continuation token. If not given, the start time set earlier is used.
+            pagesize: Maximum number of events to return.
+            timeout: Timeout for the operation.
+
+        Returns:
+            Batch of events and a continuation token for the next query.
         """
         if not (token is None or isinstance(token, str)):
             raise TypeError(f"token must be string or None, not {type(token)}")
@@ -149,6 +167,13 @@ class Query:
     }
 
     def __init__(self, url: str, **kwargs: Any):
+        """
+        Initialize Query class.
+
+        Args:
+            url: Sharing API url, must include `apikey` query parameter.
+        """
+
         # Check args
         if not isinstance(url, str):
             raise TypeError(f"url must be string not {type(url)}")
@@ -186,6 +211,18 @@ class Query:
         """Query sharing API.
 
         Events are returned sorted by timestamp.
+
+        Args:
+            filter: Rulelang filter.
+            projection: List of event field names to include in the results.
+            start: Start time for the query.
+            end: End time for the query.
+            reverse: Return events in reverse order.
+            max_events: Maximum number of events to generate.
+            timeout: Timeout for one sharing API query fetching more events.
+
+        Returns:
+            Generator yielding events matching the query.
         """
         if not (filter is None or isinstance(filter, str)):
             raise TypeError(f"filter must be string or None, not {type(filter)}")
@@ -265,7 +302,7 @@ class Query:
 
 
 def query(url: str, **kwargs: Any) -> Iterable[Event]:
-    """Shortcut to Query().query()."""
+    """Shortcut to Query(url).query()."""
     return Query(url).query(**kwargs)
 
 
