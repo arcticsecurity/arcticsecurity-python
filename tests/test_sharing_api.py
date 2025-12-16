@@ -314,7 +314,8 @@ class TestSync:
         monkeypatch.setenv("TZ", system_tz)
         import time
 
-        time.tzset()
+        if hasattr(time, "tzset"):
+            time.tzset()
 
         naive_dt = datetime(2025, 1, 1)
         aware_dt = naive_dt.replace(tzinfo=ZoneInfo(system_tz))
@@ -337,7 +338,8 @@ class TestSync:
         monkeypatch.setenv("TZ", system_tz)
         import time
 
-        time.tzset()
+        if hasattr(time, "tzset"):
+            time.tzset()
 
         aware_dt = datetime(2025, 1, 1, tzinfo=ZoneInfo(tz))
 
