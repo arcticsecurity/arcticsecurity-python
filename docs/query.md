@@ -2,6 +2,10 @@
 
 The `Query` class reads events that match user-provided conditions. It is ideal for fetching specific events from the API in one-time queries.
 
+### Time range
+
+The time range of the events that query matches is set with `start` and `end` parameters. The default time range is the full database contents. See [API documentation](api.md#arcticsecurity.sharing_api.Query.query) for details.
+
 ### Timeout
 
 The `timeout` parameter applies to a single retrieval of a batch of events from the backend. There is no overall timeout for the generator returned by `query()`.

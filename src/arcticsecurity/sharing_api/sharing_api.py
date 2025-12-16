@@ -38,8 +38,8 @@ class Sync:
         Args:
             url: Sharing API url, must include `apikey` query parameter.
             filter: Rulelang filter.
-            projection: List of event field names to include in the results.
-            start: Start time for the initial query. Can also be set with seek().
+            projection: List of event field names to include in the results. Note that the list of keys provided by the server can only be limited by this parameter.
+            start: Start time for the initial query. Can also be set with seek(). Default value `None` means current time. Positive numbers are interpret as epoch time. Non-positive numbers are interpret as that many seconds in the past.
         """
 
         # Check args
@@ -101,7 +101,7 @@ class Sync:
         Args:
             token: Continuation token. If not given, the start time set earlier is used.
             pagesize: Maximum number of events to return.
-            timeout: Timeout for the operation.
+            timeout: Timeout for the operation in [s].
 
         Returns:
             Batch of events and a continuation token for the next query.
@@ -138,7 +138,11 @@ class Sync:
         return resp.json(), token
 
     def seek(self, ts: Union[datetime, int, float, None]) -> None:
-        """Set sync start to specific time."""
+        """Set sync start to specific time.
+
+        Args:
+            ts: See start in __init__.
+        """
         self.start = self._seek(ts)
 
     def _seek(self, ts: Union[datetime, int, float, None]) -> float:
@@ -214,12 +218,12 @@ class Query:
 
         Args:
             filter: Rulelang filter.
-            projection: List of event field names to include in the results.
-            start: Start time for the query.
-            end: End time for the query.
+            projection: List of event field names to include in the results. Note that the list of keys provided by the server can only be limited by this parameter.
+            start: Start time for the query. Default value `None` means forever. Positive numbers are interpret as epoch time. Non-positive numbers are interpret as that many seconds in the past.
+            end: End time for the query. Default value `None` means current time. Positive numbers are interpret as epoch time. Non-positive numbers are interpret as that many seconds in the past.
             reverse: Return events in reverse order.
             max_events: Maximum number of events to generate.
-            timeout: Timeout for one sharing API query fetching more events.
+            timeout: Timeout for one sharing API query fetching more events in [s].
 
         Returns:
             Generator yielding events matching the query.

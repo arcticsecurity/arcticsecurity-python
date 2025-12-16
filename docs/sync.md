@@ -6,13 +6,11 @@ The `Sync` class reads all events matching user-provided conditions and provides
 
 `Sync.read()` reads the next batch of events from the API. It returns a list of events and a continuation token.
 
-It accepts the following parameters:
-
-- `token`: The continuation token from the previous `read()` call.
-- `pagesize`: The maximum number of events to retrieve in one batch (default: 1000).
-- `timeout`: The maximum number of seconds to wait for the backend response (default: 600).
+A `token` should be provided for the `read()` call in all but the very first call. The `token` is returned by the `read()`. Using the `token` provides continuity in the events.
 
 `Sync.seek()` sets the initial start time for synchronization. This is only used when no `token` is provided to `read()`. By default, synchronization starts from the current time.
+
+See full documentation in the [API documentation](api.md#arcticsecurity.sharing_api.Sync.read)
 
 ### Paging Loop
 

@@ -60,8 +60,8 @@ while True:
 ```bash
 uv sync --group dev
 
-ruff check .
-pytest
+uv ruff check .
+uv pytest
 ```
 
 ## Roadmap

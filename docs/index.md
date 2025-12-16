@@ -12,11 +12,11 @@ Python >= 3.9 is required.
 
 ## Quick Start
 
-The library supports two distinct ways to retrieve events from the Sharing API: `Query` and `Sync`.
+The library supports two distinct ways to retrieve events from the Sharing API: [`Query`](query.md) and [`Sync`](sync.md).
 
 ### Query
 
-Use the `Query` class to perform one-off queries for specific events.
+Use the [`Query`](query.md) class to perform one-off queries for specific events.
 
 ```python
 from arcticsecurity.sharing_api import Query
@@ -28,7 +28,7 @@ for event in Query(url).query(filter='"network owner"="Example Co"', max_events=
 
 ### Sync
 
-Use the `Sync` class to reliably fetch all event data. It uses pagination with opaque continuation tokens to ensure no events are missed.
+Use the [`Sync`](sync.md) class to reliably fetch all event data. It uses pagination with opaque continuation tokens to ensure no events are missed.
 
 ```python
 from arcticsecurity.sharing_api import Sync
@@ -48,11 +48,6 @@ while True:
 # store the token for the next run
 ```
 
-## Common features
-
-- Robust error handling with specific exceptions (`ConfigError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`).
-- Optional timeout and user-agent customization
-
 ## Sharing API URL
 
 Both `Query()` and `Sync()` require a share API URL. The URL must include an `apikey` query parameter. The API key is parsed from the URL and sent in the `Authorization` header.
@@ -61,18 +56,6 @@ Example URL:
 `https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY`
 
 The URL may also contain other valid query parameters. These are parsed and included in the backend requests. Parameters provided in `Query.query()` or `Sync.read()` override any defaults set in the URL.
-
-## Error Handling & Retry
-
-The library raises the following exceptions:
-
-- `ConfigError`: Invalid URL or parameters.
-- `NetworkError`: Transport or HTTP failure.
-- `Retry`: A transient condition occurred; the request can be retried. The exception may include a `after` attribute with a suggested delay in seconds.
-- `TimeoutError`: The query timed out.
-- `InvalidTokenError`: The continuation token is invalid.
-- `ServerError`: A server-side error occurred.
-- `Error`: The base exception for all library-specific errors.
 
 ## User Agent & Versioning
 

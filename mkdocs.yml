@@ -23,7 +23,7 @@ plugins:
             show_root_heading: true
             show_source: true
 
-            # The followning options copied from
+            # The following options copied from
             # https://mkdocstrings.github.io/python/usage/#recommended-settings
             # (disabled some here by expirementing)
             docstring_options:
