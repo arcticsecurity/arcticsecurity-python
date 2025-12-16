@@ -5,7 +5,7 @@ on:
   push:
 
 jobs:
-  ruff:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -19,12 +19,14 @@ jobs:
       - name: Run ruff check
         run: uv run ruff check
 
-  test:
+  pytest:
     strategy:
       matrix:
         os: ["ubuntu-latest", "windows-latest", "macos-latest"]
         python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
+    needs:
+      - lint
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
