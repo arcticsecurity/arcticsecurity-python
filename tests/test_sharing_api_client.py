@@ -22,8 +22,8 @@ class TestTimeout:
         timeout.check()
 
     def test_triggered(self):
-        timeout = _api_client.Timeout(0.001)
-        time.sleep(0.01)
+        timeout = _api_client.Timeout(0.01)
+        time.sleep(0.02)
         with pytest.raises(errors.TimeoutError):
             timeout.check()
 
