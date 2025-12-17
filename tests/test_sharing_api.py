@@ -4,6 +4,7 @@ Test sharing api library.
 
 from datetime import datetime, timezone
 from itertools import chain
+from typing import no_type_check
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -156,6 +157,7 @@ class TestQuery:
         with pytest.raises(sharing_api.ConfigError):
             sharing_api.Query(url)
 
+    @no_type_check
     def test_ctor_arg_validation(self):
         """Test ctor args are validated."""
         with pytest.raises(TypeError):
@@ -172,6 +174,7 @@ class TestQuery:
         with pytest.raises(ValueError):
             sharing_api.Query(url, foo=None)
 
+    @no_type_check
     def test_query_arg_validation(self):
         """Test query args are validated."""
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
@@ -389,6 +392,7 @@ class TestSync:
         sync.api_client = client
         sync.read()
 
+    @no_type_check
     def test_ctor_arg_validation(self):
         """Test ctor args are validated."""
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
@@ -414,6 +418,7 @@ class TestSync:
         with pytest.raises(ValueError):
             sharing_api.Sync(url, foo=None)
 
+    @no_type_check
     def test_query_arg_validation(self):
         """Test query args are validated."""
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
@@ -428,6 +433,7 @@ class TestSync:
         with pytest.raises(TypeError):
             sync.read(timeout="100")
 
+    @no_type_check
     def test_seek_arg_validation(self):
         """Test seek args are validated."""
         url = "https://example.com/shares/v2/share-id?apikey=api-key"

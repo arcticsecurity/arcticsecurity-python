@@ -130,7 +130,7 @@ class _ApiClient:
 
     def async_query(
         self,
-        params: Optional[dict[str, Union[str, Sequence[str]]]] = None,
+        params: Optional[dict[str, Union[str, Sequence[str], int, float]]] = None,
         timeout: Optional[float] = None,
     ) -> httpx.Response:
         """Execute 3-phase async query."""
@@ -148,7 +148,7 @@ class _ApiClient:
     def _async_post_query(
         self,
         query: Query,
-        params: Optional[dict[str, Union[str, Sequence[str]]]] = None,
+        params: Optional[dict[str, Union[str, Sequence[str], int, float]]] = None,
     ) -> str:
         """POST async query.
 

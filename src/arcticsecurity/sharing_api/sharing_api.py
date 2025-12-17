@@ -4,7 +4,7 @@ Sharing API client.
 
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import datetime
 from typing import Any, Optional, Union
 
@@ -211,7 +211,7 @@ class Query:
         max_events: int = 0,
         timeout: Optional[float] = 600,
         **kwargs: Any,
-    ) -> Iterable[Event]:
+    ) -> Iterator[Event]:
         """Query sharing API.
 
         Events are returned sorted by timestamp.

@@ -47,6 +47,12 @@ module = "tests.*"
 disallow_untyped_defs = false
 check_untyped_defs = true
 
+[[tool.ty.overrides]]
+include = ["tests/**"]
+
+[tool.ty.overrides.rules]
+invalid-method-override = "ignore"
+
 [dependency-groups]
 dev = [
     "mkdocs>=1.6.1",
@@ -57,4 +63,5 @@ dev = [
     "pytest>=8.4.2",
     "ruff>=0.14.6",
     "tzdata",
+    "ty",
 ]
