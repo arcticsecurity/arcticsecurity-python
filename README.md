@@ -62,6 +62,12 @@ uv sync --group dev
 
 uv ruff check .
 uv pytest
+
+uv run mypy --config-file pyproject.toml -p arcticsecurity
+uvx ty check
+
+uv run mkdocs build
+uv run mkdocs serve
 ```
 
 ## Roadmap
