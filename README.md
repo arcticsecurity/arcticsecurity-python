@@ -53,6 +53,10 @@ while True:
 - Robust error handling with specific exceptions (`ConfigError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`).
 - Optional timeout and user-agent customization
 
+## Versioning
+
+Follows [Semantic Versioning v2](https://semver.org/spec/v2.0.0.html).
+
 ## Development
 
 [uv](https://docs.astral.sh/uv/) is required.
