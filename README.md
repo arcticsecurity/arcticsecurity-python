@@ -64,11 +64,11 @@ Follows [Semantic Versioning v2](https://semver.org/spec/v2.0.0.html).
 ```bash
 uv sync --group dev
 
-uv ruff check .
-uv pytest --doctest-modules
+uv run ruff check .
+uv run pytest --doctest-modules
 
 uv run mypy --config-file pyproject.toml -p arcticsecurity
-uvx ty check
+uv run ty check
 
 uv run mkdocs build
 uv run mkdocs serve
