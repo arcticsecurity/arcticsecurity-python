@@ -118,7 +118,12 @@ class _ApiClient:
             base_url=self.urls.base_url,
             follow_redirects=True,
             timeout=60,
-            headers={**self.urls.authorization_header, "USER-AGENT": self.user_agent},
+            headers={
+                **self.urls.authorization_header,
+                "USER-AGENT": self.user_agent,
+                "ACCEPT-ENCODING": "gzip",
+                "ACCEPT": "application/json",
+            },
             transport=self.transport,
         )
 
