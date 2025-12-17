@@ -61,7 +61,7 @@ while True:
 uv sync --group dev
 
 uv ruff check .
-uv pytest
+uv pytest --doctest-modules
 
 uv run mypy --config-file pyproject.toml -p arcticsecurity
 uvx ty check
