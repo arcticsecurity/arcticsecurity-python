@@ -552,10 +552,10 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(MockServer(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0.01
+            url, transport=xport, sleep_before_first_status_query=0.02
         )
         with pytest.raises(errors.TimeoutError):
-            api.async_query(timeout=0.001)
+            api.async_query(timeout=0.01)
 
     def test_default_user_agent(self):
         class Server(MockServer):
