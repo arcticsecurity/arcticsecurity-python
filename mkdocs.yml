@@ -1,3 +1,4 @@
+---
 site_name: Arctic Security
 site_description: Documentation for Arctic Security Python library
 site_url: https://github.com/abusesa/arcticsecurity-python
@@ -27,7 +28,7 @@ plugins:
             # https://mkdocstrings.github.io/python/usage/#recommended-settings
             # (disabled some here by expirementing)
             docstring_options:
-               ignore_init_summary: true
+              ignore_init_summary: true
             # docstring_section_style: list
             # filters: public  # Sponsors only!
             # summary: true  # Adds Methods-table
