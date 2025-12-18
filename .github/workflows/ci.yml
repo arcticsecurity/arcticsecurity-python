@@ -18,6 +18,8 @@ jobs:
         run: uv run ruff format --check
       - name: Run ruff check
         run: uv run ruff check
+      - name: Run yamllint
+        run: git ls-files '*.yml' '*.yaml' | xargs uv run yamllint -s
 
   pytest:
     strategy:
