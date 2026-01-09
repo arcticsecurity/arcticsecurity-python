@@ -209,6 +209,11 @@ class _ApiClient:
                     f"Error getting status, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
                 )
                 time.sleep(self.sleep_after_50x_error_within_query)
+            elif response.status_code == 410:
+                if response.headers.get("X-STATUS") == "Job expired":
+                    raise Error("The query has expired")
+                else:
+                    raise Retry(f"Job no longer exists (may have become stale)")
             else:
                 raise Retry(
                     f"Unexpected status {response.status_code} loading results, {response.text}"
@@ -230,7 +235,10 @@ class _ApiClient:
             if response.status_code == 200:
                 break
             elif response.status_code == 410:
-                raise Retry("Results have been fetched already")
+                if response.headers.get("X-STATUS") == "Job expired":
+                    raise Error("The query has expired")
+                else:
+                    raise Retry("Results have been fetched already")
             elif response.status_code == 500:
                 raise ServerError(
                     f"Sharing API server error 500 fetching results, {response.text}"
