@@ -211,9 +211,10 @@ class TestSync:
         client = MockClient(url, events=events)
         sync.api_client = client
 
-        rx_events, token = sync.read()
-        assert rx_events == []
-        assert token == last_inserted_token
+        res = sync.read()
+        assert res.events == []
+        assert res.token == last_inserted_token
+        assert not res.has_more
 
     def test_one_event(self):
         """Test fetching one event from one page succeeds."""
@@ -223,9 +224,10 @@ class TestSync:
         client = MockClient(url, events=events)
         sync.api_client = client
 
-        rx_events, token = sync.read()
-        assert rx_events == events[0]
-        assert token == last_inserted_token
+        res = sync.read()
+        assert res.events == events[0]
+        assert res.token == last_inserted_token
+        assert not res.has_more
 
     def test_multiple_pages(self):
         """Test fetching multiple pages succeeds."""
@@ -239,17 +241,20 @@ class TestSync:
         client = MockClient(url, events=events, tokens=tokens)
         sync.api_client = client
 
-        rx_events, token = sync.read()
-        assert rx_events == events[0]
-        assert token == tokens[0]
+        res = sync.read()
+        assert res.events == events[0]
+        assert res.token == tokens[0]
+        assert res.has_more
 
-        rx_events, token = sync.read(token=token)
-        assert rx_events == events[1]
-        assert token == last_inserted_token
+        res = sync.read(token=res.token)
+        assert res.events == events[1]
+        assert res.token == last_inserted_token
+        assert not res.has_more
 
-        rx_events, token = sync.read(token=token)
-        assert rx_events == []
-        assert token == last_inserted_token
+        res = sync.read(token=res.token)
+        assert res.events == []
+        assert res.token == last_inserted_token
+        assert not res.has_more
 
     def test_pagesize(self):
         pagesize = 100

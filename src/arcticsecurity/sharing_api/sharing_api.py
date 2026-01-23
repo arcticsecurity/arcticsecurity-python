@@ -2,17 +2,26 @@
 Sharing API client.
 """
 
+import json
 import logging
 import time
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, Union
 
 from ._api_client import _ApiClient
-from .errors import ConfigError
+from .errors import ConfigError, ServerError
 
 logger = logging.getLogger(__name__)
 Event = dict[str, Union[str, list[str]]]
+
+
+@dataclass(frozen=True)
+class SyncReadResponse:
+    events: list[Event]
+    token: Optional[str]
+    has_more: bool
 
 
 class Sync:
@@ -93,7 +102,7 @@ class Sync:
         token: Optional[str] = None,
         pagesize: int = 1000,
         timeout: Optional[float] = 600,
-    ) -> tuple[list[Event], Optional[str]]:
+    ) -> SyncReadResponse:
         """Sync events from sharing API
 
         Events are returned sorted by insertion time.
@@ -132,10 +141,20 @@ class Sync:
 
         try:
             token = resp.headers["x-next-token"]
+            has_more = True
         except KeyError:
             token = resp.headers.get("x-last-inserted-token", None)
+            has_more = False
 
-        return resp.json(), token
+        try:
+            return SyncReadResponse(
+                resp.json(),
+                token,
+                has_more,
+            )
+        except json.decoder.JSONDecodeError:
+            logger.error(f"Invalid response from server {resp.content=}")
+            raise ServerError(f"Invalid response from server {resp}")
 
     def seek(self, ts: Union[datetime, int, float, None]) -> None:
         """Set sync start to specific time.

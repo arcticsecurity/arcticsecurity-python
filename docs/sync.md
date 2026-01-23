@@ -4,7 +4,7 @@ The `Sync` class reads all events matching user-provided conditions and provides
 
 ### Methods
 
-`Sync.read()` reads the next batch of events from the API. It returns a list of events and a continuation token.
+`Sync.read()` reads the next batch of events from the API. It returns a dataclass instance containing a list of events, a continuation token, and a boolean indicating whether more events exists in the database at the moment.
 
 A `token` should be provided for the `read()` call in all but the very first call. The `token` is returned by the `read()`. Using the `token` provides continuity in the events.
 
@@ -19,10 +19,16 @@ Events can be synchronized from the Sync API with a simple paging loop. The `tok
 ```python
 token = None # Load the last known token from storage
 while True:
-    events, token = sync.read(token=token, pagesize=100)
-    if not events:
+    res = sync.read(token=token, pagesize=100)
+    if not res.events:
         break
-    process(events)
+    process(res.events)
+
+    token = res.token
+
+    if not res.has_more:
+       break
+
 # Save the token for the next run
 ```
 
@@ -34,10 +40,13 @@ For the first query, a `token` will not exist. To configure the starting point o
 sync.seek(1) # Start from the beginning of time
 token = None
 while True:
-    events, token = sync.read(token=token, pagesize=100)
-    if not events:
+    res = sync.read(token=token, pagesize=100)
+    if not res.events:
         break
     process(events)
+
+    if not res.has_more:
+       break
 ```
 
 ### Handling `InvalidTokenError`
@@ -61,7 +70,7 @@ last_inserted = None # Load last insertion time from storage
 
 while True:
     try:
-        events, token = sync.read(token=token, pagesize=100)
+        res = sync.read(token=token, pagesize=100)
     except InvalidTokenError:
         if last_inserted:
             # Reset the token and seek to the last known insertion time
@@ -72,11 +81,12 @@ while True:
             # Cannot recover, handle the error (e.g., log and exit)
             raise
     else:
-        if events:
+        if res.events:
             # Process events and update the last known insertion time
-            last_inserted = events[-1]["insertion time"]
+            last_inserted = res.events[-1]["insertion time"]
             # Persist token and last_inserted
-        else:
+
+        if not res.has_more:
             # No more events
             break
 ```

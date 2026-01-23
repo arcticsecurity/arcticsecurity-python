@@ -40,10 +40,15 @@ sync = Sync(url, filter='"network owner"="Example Co"')
 token = ...
 
 while True:
-    events, token = sync.read(token=token, pagesize=1000)
-    if not events:
+    res = sync.read(token=token, pagesize=1000)
+    if not res.events:
         break
-    # process events...
+    # process res.events...
+
+    token = res.token
+
+    if not res.has_more:
+       break
 
 # store the token for the next run
 ```
