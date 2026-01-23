@@ -2,7 +2,7 @@
 Sharing API errors
 """
 
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 __all__ = [
     "Error",
@@ -18,7 +18,9 @@ __all__ = [
 class Error(Exception):
     """Base class for all errors."""
 
-    pass
+    def __init__(self, *args: Any, url: Optional[str] = None, **kwargs: Any):
+        self.url = url
+        super().__init__(*args, **kwargs)
 
 
 class ConfigError(Error):

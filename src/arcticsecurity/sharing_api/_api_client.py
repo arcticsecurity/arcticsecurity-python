@@ -163,29 +163,36 @@ class _ApiClient:
             response = query.client.post(url=self.urls.async_path, params=params)
             query.post_url = response.request.url
         except httpx.RequestError as error:
-            raise NetworkError(f"Downloading {error.request.url} failed: {error}")
+            raise NetworkError(
+                f"Downloading {error.request.url} failed: {error}",
+                url=str(error.request.url),
+            )
 
         if self._server_unavailable(response.status_code):
             logger.debug(
                 f"Error posting job, retry later ({response.status_code} {response.text})"
             )
             # Server error on initial post -> suggest retrying whole query later again
-            raise Retry(after=response.headers.get("Retry-After", 10))
+            raise Retry(
+                after=response.headers.get("Retry-After", 10), url=str(response.url)
+            )
         elif (invalid_inputs := self._invalid_input_error(response)) is not None:
-            raise ConfigError(invalid_inputs)
+            raise ConfigError(invalid_inputs, url=str(response.url))
         elif response.status_code == 500:
             raise ServerError(
-                f"Sharing API server error 500 for submit, {response.text}"
+                f"Sharing API server error 500 for submit, {response.text}",
+                url=str(response.url),
             )
         elif response.status_code != 202:
             raise NetworkError(
-                f"Unexpected status {response.status_code} for submit, {response.text}"
+                f"Unexpected status {response.status_code} for submit, {response.text}",
+                url=str(response.request.url),
             )
 
         try:
             return response.headers["Location"]
         except KeyError:
-            raise Error("Location header missing from response")
+            raise Error("Location header missing from response", url=str(response.url))
 
     def _async_get_result_url(self, query: Query, url: str) -> str:
         """GET async result url from status url."""
@@ -193,7 +200,10 @@ class _ApiClient:
             try:
                 response = query.client.get(url=url, follow_redirects=False)
             except httpx.RequestError as error:
-                raise NetworkError(f"Downloading {error.request.url} failed: {error}")
+                raise NetworkError(
+                    f"Downloading {error.request.url} failed: {error}",
+                    url=str(error.request.url),
+                )
 
             if response.status_code == 302:
                 # results are ready
@@ -202,7 +212,8 @@ class _ApiClient:
                 time.sleep(int(response.headers.get("Retry-After", 1)))
             elif response.status_code == 500:
                 raise ServerError(
-                    f"Sharing API server error 500 getting status, {response.text}"
+                    f"Sharing API server error 500 getting status, {response.text}",
+                    url=str(response.url),
                 )
             elif self._server_unavailable(response.status_code):
                 logger.debug(
@@ -211,18 +222,22 @@ class _ApiClient:
                 time.sleep(self.sleep_after_50x_error_within_query)
             elif response.status_code == 410:
                 if response.headers.get("X-STATUS") == "Job expired":
-                    raise Error("The query has expired")
+                    raise Error("The query has expired", url=str(response.url))
                 else:
-                    raise Retry(f"Job no longer exists (may have become stale)")
+                    raise Retry(
+                        "Job no longer exists (may have become stale)",
+                        url=str(response.url),
+                    )
             else:
                 raise Retry(
-                    f"Unexpected status {response.status_code} loading results, {response.text}"
+                    f"Unexpected status {response.status_code} loading results, {response.text}",
+                    url=str(response.url),
                 )
 
         try:
             return response.headers["Location"]
         except KeyError:
-            raise Error("Location header missing from response")
+            raise Error("Location header missing from response", url=str(response.url))
 
     def _async_get_result_response(self, query: Query, url: str) -> httpx.Response:
         """GET async result response."""
@@ -230,18 +245,24 @@ class _ApiClient:
             try:
                 response = query.client.get(url)
             except httpx.RequestError as error:
-                raise NetworkError(f"Downloading {error.request.url} failed: {error}")
+                raise NetworkError(
+                    f"Downloading {error.request.url} failed: {error}",
+                    url=str(error.request.url),
+                )
 
             if response.status_code == 200:
                 break
             elif response.status_code == 410:
                 if response.headers.get("X-STATUS") == "Job expired":
-                    raise Error("The query has expired")
+                    raise Error("The query has expired", url=str(response.url))
                 else:
-                    raise Retry("Results have been fetched already")
+                    raise Retry(
+                        "Results have been fetched already", url=str(response.url)
+                    )
             elif response.status_code == 500:
                 raise ServerError(
-                    f"Sharing API server error 500 fetching results, {response.text}"
+                    f"Sharing API server error 500 fetching results, {response.text}",
+                    url=str(response.url),
                 )
             elif self._server_unavailable(response.status_code):
                 # sleep only 1 sec since results are stored only for a limited time
@@ -251,10 +272,13 @@ class _ApiClient:
                 time.sleep(self.sleep_after_50x_error_within_query)
             elif self._is_invalid_token_error(response):
                 assert query.post_url is not None  # for mypy
-                raise InvalidTokenError(query.post_url.params.get("token"))
+                raise InvalidTokenError(
+                    query.post_url.params.get("token"), url=str(response.url)
+                )
             else:
                 raise Retry(
-                    f"Unexpected status {response.status_code} fetching results, {response.text}"
+                    f"Unexpected status {response.status_code} fetching results, {response.text}",
+                    url=str(response.url),
                 )
 
         return response

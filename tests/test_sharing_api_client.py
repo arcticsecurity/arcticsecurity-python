@@ -1,3 +1,5 @@
+# type: ignore  (for accessing excinfo.value.url)
+
 """
 Test API client.
 """
@@ -138,8 +140,13 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(Server(url))
         api = _api_client._ApiClient(url, transport=xport)
-        with pytest.raises(errors.NetworkError):
+        with pytest.raises(errors.NetworkError) as excinfo:
             api.async_query()
+        assert (
+            str(excinfo.value)
+            == "Downloading https://example.com/shares/v2/async/share-id failed: failed"
+        )
+        assert excinfo.value.url == "https://example.com/shares/v2/async/share-id"
 
     def test_post_fails_on_401(self):
         class Server(MockServer):
@@ -149,8 +156,10 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(Server(url))
         api = _api_client._ApiClient(url, transport=xport)
-        with pytest.raises(errors.NetworkError):
+        with pytest.raises(errors.NetworkError) as excinfo:
             api.async_query()
+        assert str(excinfo.value) == "Unexpected status 401 for submit, "
+        assert excinfo.value.url == "https://example.com/shares/v2/async/share-id"
 
     def test_post_fails_on_invalid_parameters(self):
         class Server(MockServer):
@@ -191,9 +200,17 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(Server(url))
         api = _api_client._ApiClient(url, transport=xport)
-        expected_error = errors.ServerError if code == 500 else errors.Retry
-        with pytest.raises(expected_error):
-            api.async_query()
+
+        if code == 500:
+            with pytest.raises(errors.ServerError) as excinfo:
+                api.async_query()
+            assert str(excinfo.value) == "Sharing API server error 500 for submit, "
+            assert excinfo.value.url == "https://example.com/shares/v2/async/share-id"
+        else:
+            with pytest.raises(errors.Retry) as excinfo:
+                api.async_query()
+            assert excinfo.value.url == "https://example.com/shares/v2/async/share-id"
+            assert excinfo.value.after == 10
 
     def test_post_no_location_header(self):
         class Server(MockServer):
@@ -203,8 +220,10 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(Server(url))
         api = _api_client._ApiClient(url, transport=xport)
-        with pytest.raises(errors.Error):
+        with pytest.raises(errors.Error) as excinfo:
             api.async_query()
+        assert str(excinfo.value) == "Location header missing from response"
+        assert excinfo.value.url == "https://example.com/shares/v2/async/share-id"
 
     def test_get_status_fails_on_network_error(self):
         class Server(MockServer):
@@ -216,8 +235,9 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        with pytest.raises(errors.NetworkError):
+        with pytest.raises(errors.NetworkError) as excinfo:
             api.async_query()
+        assert str(excinfo.value) == f"Downloading {excinfo.value.url} failed: failed"
 
     def test_get_status_302(self):
         url = "https://example.com/shares/v2/share-id?apikey=k1"
@@ -302,9 +322,20 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        expected_error = errors.ServerError if code == 500 else errors.Retry
-        with pytest.raises(expected_error):
-            api.async_query()
+        if code == 500:
+            with pytest.raises(errors.ServerError) as excinfo:
+                api.async_query()
+            assert str(excinfo.value) == "Sharing API server error 500 getting status, "
+            assert excinfo.value.url.startswith(
+                "https://example.com/shares/v2/async/share-id/jobs/"
+            )
+        else:
+            with pytest.raises(errors.Retry) as excinfo:
+                api.async_query()
+            assert str(excinfo.value) == "Unexpected status 400 loading results, "
+            assert excinfo.value.url.startswith(
+                "https://example.com/shares/v2/async/share-id/jobs/"
+            )
 
     def test_get_status_no_locaton_header(self):
         class Server(MockServer):
@@ -316,8 +347,12 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        with pytest.raises(errors.Error):
+        with pytest.raises(errors.Error) as excinfo:
             api.async_query()
+        assert excinfo.value.url.startswith(
+            "https://example.com/shares/v2/async/share-id/jobs/"
+        )
+        assert str(excinfo.value) == "Location header missing from response"
 
     def test_get_result_fails_on_network_error(self):
         class Server(MockServer):
@@ -329,8 +364,12 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        with pytest.raises(errors.NetworkError):
+        with pytest.raises(errors.NetworkError) as excinfo:
             api.async_query()
+        assert excinfo.value.url.startswith(
+            "https://example.com/shares/v2/async/share-id/results/"
+        )
+        assert str(excinfo.value) == f"Downloading {excinfo.value.url} failed: failed"
 
     def test_get_result_410(self):
         class Server(MockServer):
@@ -342,8 +381,13 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        with pytest.raises(errors.Retry):
+        with pytest.raises(errors.Retry) as excinfo:
             api.async_query()
+        assert excinfo.value.url.startswith(
+            "https://example.com/shares/v2/async/share-id/results/"
+        )
+        assert str(excinfo.value) == "Results have been fetched already"
+        assert excinfo.value.after is None
 
     @pytest.mark.parametrize("code", [502, 503, 504])
     def test_get_result_50x_302(self, code):
@@ -393,9 +437,23 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        expected_error = errors.ServerError if code == 500 else errors.Retry
-        with pytest.raises(expected_error):
-            api.async_query()
+        if code == 500:
+            with pytest.raises(errors.ServerError) as excinfo:
+                api.async_query()
+            assert excinfo.value.url.startswith(
+                "https://example.com/shares/v2/async/share-id/results/"
+            )
+            assert (
+                str(excinfo.value) == "Sharing API server error 500 fetching results, "
+            )
+        else:
+            with pytest.raises(errors.Retry) as excinfo:
+                api.async_query()
+            assert excinfo.value.url.startswith(
+                "https://example.com/shares/v2/async/share-id/results/"
+            )
+            assert str(excinfo.value) == "Unexpected status 400 fetching results, "
+            assert excinfo.value.after is None
 
     def test_invalid_token(self):
         token = "foo"
@@ -414,8 +472,13 @@ class TestApi:
         api = _api_client._ApiClient(
             url, transport=xport, sleep_before_first_status_query=0
         )
-        with pytest.raises(errors.InvalidTokenError):
+        with pytest.raises(errors.InvalidTokenError) as excinfo:
             api.async_query(params={"token": token})
+
+        assert excinfo.value.url.startswith(
+            "https://example.com/shares/v2/async/share-id/results/"
+        )
+        assert str(excinfo.value) == token
 
     def test_qp_in_url(self):
         """Test qp provided in url is passed to the server."""
