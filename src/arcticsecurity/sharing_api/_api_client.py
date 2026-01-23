@@ -352,6 +352,8 @@ class _ShareUrls:
 
         >>> _ShareUrls("https://example.com/shares/v2/share-id?apikey=api-key&filter=foo=bar")
         _ShareUrls(base_url='https://example.com', sync_path='/shares/v2/share-id', async_path='/shares/v2/async/share-id', authorization_header={'Authorization': 'token api-key'}, qp={'filter': ['foo=bar']})
+        >>> str(_ShareUrls("https://example.com/shares/v2/share-id?apikey=api-key&filter=foo=bar"))
+        'https://example.com//shares/v2/async/share-id'
         >>> _ShareUrls("https://example.com/shares/v2/share-id?filter=foo=bar")
         Traceback (most recent call last):
         arcticsecurity.sharing_api.errors.ConfigError: API share url must have apikey parameter
@@ -369,3 +371,6 @@ class _ShareUrls:
         self.async_path = re.sub(r"^/shares(/v2)?", "/shares/v2/async", o.path)
         self.authorization_header = {"Authorization": f"token {qp.pop('apikey')[0]}"}
         self.qp = qp
+
+    def __str__(self) -> str:
+        return f"{self.base_url}/{self.async_path}"

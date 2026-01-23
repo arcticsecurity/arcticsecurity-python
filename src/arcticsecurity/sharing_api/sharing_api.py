@@ -176,6 +176,9 @@ class Sync:
         else:
             return ts.timestamp()
 
+    def __str__(self) -> str:
+        return f"Sync({self.api_client.urls})"
+
 
 class Query:
     """Query events from sharing API."""
@@ -322,6 +325,9 @@ class Query:
                 if 0 < max_events <= n_events:
                     more = False
                     break
+
+    def __str__(self) -> str:
+        return f"Query({self.api_client.urls})"
 
 
 def query(url: str, **kwargs: Any) -> Iterable[Event]:
