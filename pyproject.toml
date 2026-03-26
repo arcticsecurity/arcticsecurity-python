@@ -2,8 +2,7 @@
 name = "arcticsecurity"
 version = "0.1.0"
 authors = [
-    {name: "Arctic Security", email: "pypi@arcticsecurity.com"},
-]
+    {name = "Arctic Security", email = "pypi@arcticsecurity.com"}, ]
 description = "Library to access Arctic Security APIs"
 license = "MIT"
 license-files = ["LICENSE"]
