@@ -1,6 +1,9 @@
 [project]
 name = "arcticsecurity"
 version = "0.1.0"
+authors = [
+    {name: "Arctic Security", email: "pypi@arcticsecurity.com"},
+]
 description = "Library to access Arctic Security APIs"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -24,6 +27,10 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.urls]
+Home = "https://github.com/arcticsecurity/arcticsecurity-python"
+Issues = "https://github.com/arcticsecurity/arcticsecurity-python/issues"
 
 [build-system]
 requires = ["uv_build >= 0.9.9, <0.10.0"]
