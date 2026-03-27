@@ -1,0 +1,60 @@
+---
+name: CI
+# yamllint disable-line rule:truthy
+on:
+  push:
+
+jobs:
+  lint:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install latest version of uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Run ruff format
+        run: uv run ruff format --check
+      - name: Run ruff check
+        run: uv run ruff check
+      - name: Run yamllint
+        run: git ls-files '*.yml' '*.yaml' | xargs uv run yamllint -s
+
+  typecheck:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install latest version of uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Run mypy
+        run: uv run mypy --config-file pyproject.toml -p arcticsecurity
+      - name: Run ty
+        run: uv run ty check
+
+  pytest:
+    strategy:
+      matrix:
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    needs:
+      - lint
+      - typecheck
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install latest version of uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Run pytest
+        run: uv run pytest --doctest-modules
