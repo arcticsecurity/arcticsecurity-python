@@ -21,6 +21,20 @@ jobs:
       - name: Run yamllint
         run: git ls-files '*.yml' '*.yaml' | xargs uv run yamllint -s
 
+  typecheck:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install latest version of uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Run mypy
+        run: uv run mypy --config-file pyproject.toml -p arcticsecurity
+      - name: Run ty
+        run: uv run ty check
+
   pytest:
     strategy:
       matrix:
@@ -29,6 +43,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - lint
+      - typecheck
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
