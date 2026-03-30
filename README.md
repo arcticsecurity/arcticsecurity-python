@@ -79,17 +79,9 @@ uv run mkdocs build
 uv run mkdocs serve
 ```
 
-## Roadmap
-
-- Add a `CHANGELOG` and commit to semantic versioning.
-
 ## Contributing
 
 Issues and pull requests are welcome. Please add tests for any new behavior.
-
-## License
-
-Add a `LICENSE` file (e.g., MIT or Apache-2.0) and reference it here.
 
 ## Status
 
