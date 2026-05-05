@@ -30,14 +30,14 @@ jobs:
                   print $3;
               }
           }' pyproject.toml > .package-version
-          
+
           VERSION="$(cat .package-version)"
           if git rev-parse "v${VERSION}" > /dev/null 2>&1 ; then
               NEW_VERSION=false
           else
               NEW_VERSION=true
           fi
-          
+
           {
               echo "VERSION=${VERSION}"
               echo "NEW_VERSION=${NEW_VERSION}"
