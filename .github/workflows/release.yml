@@ -1,0 +1,56 @@
+---
+name: Release
+# yamllint disable-line rule:truthy
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v7
+      - name: Detect version change
+        id: version-check
+        run: |
+          awk '{
+              if ($1 == "version") {
+                  gsub("\"", "", $3);
+                  print $3;
+              }
+          }' pyproject.toml > .package-version
+
+          VERSION="$(cat .package-version)"
+          if git rev-parse "v${VERSION}" > /dev/null 2>&1 ; then
+              NEW_VERSION=false
+          else
+              NEW_VERSION=true
+          fi
+
+          {
+              echo "VERSION=${VERSION}"
+              echo "NEW_VERSION=${NEW_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build and publish
+        if: steps.version-check.outputs.NEW_VERSION == 'true'
+        run: |
+          uv build
+          uv publish
+      - name: Create GitHub release
+        if: steps.version-check.outputs.NEW_VERSION == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.version-check.outputs.VERSION }}
+          generate_release_notes: true
+          files: dist/*
