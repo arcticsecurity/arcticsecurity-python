@@ -52,8 +52,7 @@ jobs:
           uv publish
       - name: Create GitHub release
         if: steps.version-check.outputs.NEW_VERSION == 'true'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: v${{ steps.version-check.outputs.VERSION }}
-          generate_release_notes: true
-          files: dist/*
+        run: gh release create "$TAG" dist/* --generate-notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.version-check.outputs.VERSION }}
