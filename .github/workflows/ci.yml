@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install latest version of uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install dependencies
         run: uv sync --group dev
       - name: Run ruff format
@@ -39,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install latest version of uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install dependencies
         run: uv sync --group dev
       - name: Run mypy
@@ -65,7 +65,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install latest version of uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: ${{ matrix.python }}
       - name: Install dependencies
