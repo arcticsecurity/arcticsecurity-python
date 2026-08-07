@@ -2,7 +2,6 @@
 Sharing API client.
 """
 
-import json
 import logging
 import time
 from collections.abc import Iterable, Iterator
@@ -10,6 +9,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, Union
 
+import httpx
+
+from . import _util
 from ._api_client import _ApiClient
 from .errors import ConfigError, ServerError
 
@@ -133,15 +135,11 @@ class Sync:
             token = resp.headers.get("x-last-inserted-token", None)
             has_more = False
 
-        try:
-            return SyncReadResponse(
-                resp.json(),
-                token,
-                has_more,
-            )
-        except json.decoder.JSONDecodeError:
-            logger.error(f"Invalid response from server {resp.content=}")
-            raise ServerError(f"Invalid response from server {resp}")
+        return SyncReadResponse(
+            _parse_events(resp),
+            token,
+            has_more,
+        )
 
     def seek(self, ts: Union[datetime, int, float, None]) -> None:
         """Set sync start to specific time.
@@ -276,21 +274,28 @@ class Query:
             }
         )
 
+        return self._iter_events(qp, max_events, timeout)
+
+    def _iter_events(
+        self,
+        qp: dict[str, Any],
+        max_events: int,
+        timeout: Optional[float],
+    ) -> Iterator[Event]:
+        """Generate events page by page. Arguments are already validated."""
         more = True
-        token = None
         n_events = 0
 
         while more:
             resp = self.api_client.async_query(qp, timeout=timeout)
-            events = resp.json()
+            events = _parse_events(resp)
             logger.debug(f"queried, got {len(events)} events")
 
             try:
-                token = resp.headers["x-next-token"]
+                qp["token"] = resp.headers["x-next-token"]
             except KeyError:
                 more = False
             else:
-                qp["token"] = token
                 more = True
 
             for event in events:
@@ -307,6 +312,30 @@ class Query:
 def query(url: str, **kwargs: Any) -> Iterable[Event]:
     """Shortcut to Query(url).query()."""
     return Query(url).query(**kwargs)
+
+
+def _parse_events(resp: httpx.Response) -> list[Event]:
+    """Decode and sanity check an events response body.
+
+    Query used to call resp.json() bare, so malformed output escaped as a raw
+    json.JSONDecodeError instead of a ServerError. Neither caller checked that
+    the payload was a list, so a JSON object made Query yield its keys as if
+    they were events.
+    """
+    try:
+        events = resp.json()
+    except ValueError:
+        logger.error(f"Invalid response from server {_util.truncate(resp.text)!r}")
+        raise ServerError("Invalid response from server: not valid JSON")
+
+    if not isinstance(events, list):
+        logger.error(f"Unexpected response from server {_util.truncate(resp.text)!r}")
+        raise ServerError(
+            f"Unexpected response from server: expected a list of events,"
+            f" got {type(events).__name__}"
+        )
+
+    return events
 
 
 def _validate_projection(

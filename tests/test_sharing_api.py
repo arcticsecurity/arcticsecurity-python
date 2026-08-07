@@ -12,6 +12,7 @@ import httpx
 import pytest
 
 from arcticsecurity import sharing_api
+from arcticsecurity.sharing_api import errors
 from arcticsecurity.sharing_api._api_client import _ApiClient
 
 # should be ok for these tests for last_inserted_token to be always the same
@@ -234,6 +235,54 @@ class TestQuery:
 
         with pytest.raises(TypeError):
             next(query.query(timeout="100"))
+
+    @no_type_check
+    def test_query_args_validated_without_iterating(self):
+        """query() is not a bare generator function: bad args must raise at the
+        call, not at the first next()."""
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        query = sharing_api.Query(url)
+
+        for kwargs in (
+            {"filter": 1},
+            {"projection": "feed"},
+            {"start": "2025-01-01"},
+            {"end": "2025-01-01"},
+            {"reverse": 1},
+            {"max_events": None},
+            {"timeout": "100"},
+            {"pagesize": "10"},
+        ):
+            with pytest.raises(TypeError):
+                query.query(**kwargs)
+
+        with pytest.raises(ValueError):
+            query.query(bogus=1)
+
+    def test_invalid_json_raises_server_error(self):
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+
+        class BadClient(MockClient):
+            def async_query(self, *args, **kwargs):
+                return httpx.Response(200, text="not json")
+
+        query = sharing_api.Query(url)
+        query.api_client = BadClient(url)
+        with pytest.raises(errors.ServerError):
+            list(query.query())
+
+    def test_non_list_json_raises_server_error(self):
+        """A JSON object used to make query() yield its keys as events."""
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+
+        class BadClient(MockClient):
+            def async_query(self, *args, **kwargs):
+                return httpx.Response(200, json={"count": 5})
+
+        query = sharing_api.Query(url)
+        query.api_client = BadClient(url)
+        with pytest.raises(errors.ServerError):
+            list(query.query())
 
 
 class TestSync:
