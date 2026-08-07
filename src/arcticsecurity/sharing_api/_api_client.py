@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 
 import httpx
 
-from . import _version
+from . import _util, _version
 from .errors import (
     ConfigError,
     Error,
@@ -210,7 +210,9 @@ class _ApiClient:
                 # results are ready
                 break
             elif response.status_code == 202:
-                time.sleep(int(response.headers.get("Retry-After", 1)))
+                time.sleep(
+                    _util.retry_after_delay(response.headers.get("Retry-After"), 1)
+                )
             elif response.status_code == 500:
                 raise ServerError(
                     f"Sharing API server error 500 getting status, {response.text}",
