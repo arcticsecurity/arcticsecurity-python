@@ -55,11 +55,9 @@ while True:
 
 ## Sharing API URL
 
-Both `Query()` and `Sync()` require a share API URL. The URL must be an `https` URL and must include an `apikey` query parameter. The API key is parsed from the URL and sent in the `Authorization` header.
+Both `Query()` and `Sync()` require a share API URL. The URL must include an `apikey` query parameter. The API key is parsed from the URL and sent in the `Authorization` header.
 
-Because the API key is sent on every request, plain `http` URLs are rejected. Pass `allow_insecure=True` to opt out of that check for a development server; the API key is then sent in cleartext.
-
-If the server rejects the API key, an `AuthError` is raised. It is a subclass of `ConfigError`, since retrying will not help until the URL is fixed.
+If the server rejects the API key, an `AuthError` is raised.
 
 Example URL:
 `https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY`
