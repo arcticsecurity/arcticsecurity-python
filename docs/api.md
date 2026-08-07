@@ -21,6 +21,9 @@
 ::: arcticsecurity.sharing_api.ConfigError
     :docstring:
 
+::: arcticsecurity.sharing_api.AuthError
+    :docstring:
+
 ::: arcticsecurity.sharing_api.InvalidTokenError
     :docstring:
 
