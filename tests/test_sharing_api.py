@@ -161,6 +161,7 @@ class TestQuery:
         assert rx_events == list(chain(*events))
         assert client.seen_projections == [["uuid", "severity"]] * 2
 
+    @no_type_check
     def test_projection_rejects_non_str_items(self):
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         query = sharing_api.Query(url)
@@ -235,6 +236,7 @@ class TestQuery:
         with pytest.raises(TypeError):
             next(query.query(timeout="100"))
 
+    @no_type_check
     def test_query_args_validated_without_iterating(self):
         """query() is not a bare generator function: bad args must raise at the
         call, not at the first next()."""
