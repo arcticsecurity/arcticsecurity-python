@@ -36,26 +36,28 @@ from arcticsecurity.sharing_api import Sync
 url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
 sync = Sync(url, filter='"network owner"="Example Co"')
 
-# Fetch token from previous run
-token = ...
+# Load the token stored by the previous run, or None on the first run
+token = None
 
 while True:
     res = sync.read(token=token, pagesize=1000)
-    if not res.events:
-        break
     # process res.events...
 
     token = res.token
 
     if not res.has_more:
-       break
+        break
 
 # store the token for the next run
 ```
 
 ## Sharing API URL
 
-Both `Query()` and `Sync()` require a share API URL. The URL must include an `apikey` query parameter. The API key is parsed from the URL and sent in the `Authorization` header.
+Both `Query()` and `Sync()` require a share API URL. The URL must be an `https` URL and must include an `apikey` query parameter. The API key is parsed from the URL and sent in the `Authorization` header.
+
+Because the API key is sent on every request, plain `http` URLs are rejected. Pass `allow_insecure=True` to opt out of that check for a development server; the API key is then sent in cleartext.
+
+If the server rejects the API key, an `AuthError` is raised. It is a subclass of `ConfigError`, since retrying will not help until the URL is fixed.
 
 Example URL:
 `https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY`

@@ -36,26 +36,24 @@ from arcticsecurity.sharing_api import Sync
 url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
 sync = Sync(url, filter='"network owner"="Example Co"')
 
-# Fetch token from previous run
-token = ...
+# Load the token stored by the previous run, or None on the first run
+token = None
 
 while True:
     res = sync.read(token=token, pagesize=1000)
-    if not res.events:
-        break
     # process res.events...
 
     token = res.token
 
     if not res.has_more:
-       break
+        break
 
 # store the token for the next run
 ```
 
 ## Common features
 
-- Robust error handling with specific exceptions (`ConfigError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`).
+- Robust error handling with specific exceptions (`ConfigError`, `AuthError`, `NetworkError`, `Retry`, `TimeoutError`, `InvalidTokenError`, `ServerError`).
 - Optional timeout and user-agent customization
 
 ## Versioning
