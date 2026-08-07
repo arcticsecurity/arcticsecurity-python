@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Optional, Union
 from urllib.parse import parse_qs, urlparse, urlunparse
@@ -338,7 +338,8 @@ class _ShareUrls:
     base_url: str
     sync_path: str
     async_path: str
-    authorization_header: dict[str, str]
+    # Never include the credential in repr(); see __repr__ of the dataclass.
+    authorization_header: dict[str, str] = field(repr=False)
     qp: dict[str, list[str]]
 
     def __init__(self, sync_url: str):
@@ -350,8 +351,11 @@ class _ShareUrls:
         to allow merging them with the parameters provided in the url.
         (by default httpx overrides qp's in url)
 
+        The api key is never included in `repr()` or `str()` of this object, so
+        that it does not leak into logs, tracebacks or error reporting tools.
+
         >>> _ShareUrls("https://example.com/shares/v2/share-id?apikey=api-key&filter=foo=bar")
-        _ShareUrls(base_url='https://example.com', sync_path='/shares/v2/share-id', async_path='/shares/v2/async/share-id', authorization_header={'Authorization': 'token api-key'}, qp={'filter': ['foo=bar']})
+        _ShareUrls(base_url='https://example.com', sync_path='/shares/v2/share-id', async_path='/shares/v2/async/share-id', qp={'filter': ['foo=bar']})
         >>> str(_ShareUrls("https://example.com/shares/v2/share-id?apikey=api-key&filter=foo=bar"))
         'https://example.com//shares/v2/async/share-id'
         >>> _ShareUrls("https://example.com/shares/v2/share-id?filter=foo=bar")
