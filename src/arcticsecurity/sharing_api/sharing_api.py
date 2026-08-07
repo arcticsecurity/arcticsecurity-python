@@ -16,11 +16,27 @@ from ._api_client import _ApiClient
 from .errors import ConfigError, ServerError
 
 logger = logging.getLogger(__name__)
+
 Event = dict[str, Union[str, list[str]]]
+"""A single event, mapping a field name to its value or list of values."""
 
 
 @dataclass(frozen=True)
 class SyncReadResponse:
+    """Result of a single `Sync.read()` call.
+
+    Attributes:
+        events: The batch of events, in database insertion order.
+        token: Continuation token to pass to the next `read()` call. This is
+            the next token when more events are available, and the last
+            inserted token otherwise. It is `None` only when the server
+            reported no position at all, in which case the previously held
+            token should be kept.
+        has_more: Whether more events already exist in the database at the
+            moment. When `False`, the caller has reached the end of the
+            stream and should wait before reading again.
+    """
+
     events: list[Event]
     token: Optional[str]
     has_more: bool

@@ -4,7 +4,7 @@ The `Sync` class reads all events matching user-provided conditions and provides
 
 ### Methods
 
-`Sync.read()` reads the next batch of events from the API. It returns a dataclass instance containing a list of events, a continuation token, and a boolean indicating whether more events exists in the database at the moment.
+`Sync.read()` reads the next batch of events from the API. It returns a `SyncReadResponse` with the events (`events`), a continuation token (`token`), and a flag telling whether more events exist in the database at the moment (`has_more`).
 
 A `token` should be provided for the `read()` call in all but the very first call. The `token` is returned by the `read()`. Using the `token` provides continuity in the events. The returned `token` is `None` only when the server reported no position at all; keep the previously held token in that case instead of overwriting it.
 

@@ -5,12 +5,20 @@
 ::: arcticsecurity.sharing_api.Sync
     :docstring:
 
+::: arcticsecurity.sharing_api.SyncReadResponse
+    :docstring:
+
 ## Query
 
 ::: arcticsecurity.sharing_api.Query
     :docstring:
 
 ::: arcticsecurity.sharing_api.query
+    :docstring:
+
+## Types
+
+::: arcticsecurity.sharing_api.Event
     :docstring:
 
 ## Exception classes
