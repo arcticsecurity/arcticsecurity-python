@@ -133,6 +133,39 @@ class TestQuery:
         rx_events = list(query.query(max_events=max_events))
         assert rx_events == list(chain(*events))
 
+    def test_projection_generator_is_materialized(self):
+        """A generator projection must survive validation and every page."""
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        events = (
+            [{"uuid": str(uuid4())}],
+            [{"uuid": str(uuid4())}],
+        )
+        tokens = (str(uuid4()),)
+
+        class RecordingClient(MockClient):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.seen_projections = []
+
+            def async_query(self, params=None, **kwargs):
+                self.seen_projections.append((params or {}).get("projection"))
+                return super().async_query(params, **kwargs)
+
+        query = sharing_api.Query(url)
+        client = RecordingClient(url, events=events, tokens=tokens)
+        query.api_client = client
+
+        rx_events = list(query.query(projection=(x for x in ["uuid", "severity"])))
+
+        assert rx_events == list(chain(*events))
+        assert client.seen_projections == [["uuid", "severity"]] * 2
+
+    def test_projection_rejects_non_str_items(self):
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        query = sharing_api.Query(url)
+        with pytest.raises(TypeError):
+            list(query.query(projection=(x for x in ["uuid", 1])))
+
     def test_unknown_query_param_in_url(self):
         """Test unknown qp in url raises error."""
         sid = "share-id"

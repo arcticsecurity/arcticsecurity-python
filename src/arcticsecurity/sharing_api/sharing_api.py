@@ -59,17 +59,7 @@ class Sync:
         if not (filter is None or isinstance(filter, str)):
             raise TypeError(f"filter must be string or None, not {type(filter)}")
 
-        if not (
-            projection is None
-            or (
-                isinstance(projection, Iterable)
-                and not isinstance(projection, str)
-                and all(isinstance(x, str) for x in projection)
-            )
-        ):
-            raise TypeError(
-                "projection must be a list of key names, each an instance of str"
-            )
+        projection = _validate_projection(projection)
 
         client_kwargs = _pop_client_kwargs(kwargs)
 
@@ -247,17 +237,7 @@ class Query:
         if not (filter is None or isinstance(filter, str)):
             raise TypeError(f"filter must be string or None, not {type(filter)}")
 
-        if not (
-            projection is None
-            or (
-                isinstance(projection, Iterable)
-                and not isinstance(projection, str)
-                and all(isinstance(x, str) for x in projection)
-            )
-        ):
-            raise TypeError(
-                "projection must be a list of key names, each an instance of str"
-            )
+        projection = _validate_projection(projection)
 
         if not (start is None or isinstance(start, (int, float, datetime))):
             raise TypeError(
@@ -327,6 +307,41 @@ class Query:
 def query(url: str, **kwargs: Any) -> Iterable[Event]:
     """Shortcut to Query(url).query()."""
     return Query(url).query(**kwargs)
+
+
+def _validate_projection(
+    projection: Optional[Iterable[str]],
+) -> Optional[list[str]]:
+    """Validate and materialize the projection argument.
+
+    Returning a list matters: validating with `all(... for x in projection)`
+    exhausts a generator, and the exhausted object would then be handed to
+    httpx, which would serialize its repr() as the query parameter value.
+
+    >>> _validate_projection(None) is None
+    True
+    >>> _validate_projection(x for x in ["uuid", "severity"])
+    ['uuid', 'severity']
+    >>> _validate_projection("uuid")
+    Traceback (most recent call last):
+    TypeError: projection must be a list of key names, each an instance of str
+    """
+    if projection is None:
+        return None
+
+    if isinstance(projection, str) or not isinstance(projection, Iterable):
+        raise TypeError(
+            "projection must be a list of key names, each an instance of str"
+        )
+
+    keys = list(projection)
+
+    if not all(isinstance(x, str) for x in keys):
+        raise TypeError(
+            "projection must be a list of key names, each an instance of str"
+        )
+
+    return keys
 
 
 def _pop_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
