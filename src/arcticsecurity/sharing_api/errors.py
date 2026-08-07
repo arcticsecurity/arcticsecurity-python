@@ -8,6 +8,7 @@ from ._util import parse_retry_after
 
 __all__ = [
     "Error",
+    "AuthError",
     "ConfigError",
     "InvalidTokenError",
     "ServerError",
@@ -29,6 +30,20 @@ class ConfigError(Error):
     """User error in query configuration.
 
     This error may be raised by this library or by the server.
+    """
+
+    pass
+
+
+class AuthError(ConfigError):
+    """The server rejected the api key.
+
+    The share url is missing, has an expired or revoked api key, or the key
+    does not grant access to the requested share. Retrying will not help until
+    the url is fixed.
+
+    This is a subclass of `ConfigError`, since it always indicates a problem
+    with the configured share url.
     """
 
     pass

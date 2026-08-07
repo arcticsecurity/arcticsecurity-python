@@ -10,6 +10,24 @@ from typing import Any, Optional
 # hostile server could block the calling thread for an arbitrarily long time.
 MAX_RETRY_AFTER = 60.0
 
+# Upper bound for a server-supplied response body echoed into an error message
+# or a log record. Bodies can be large (and can contain event data).
+MAX_BODY_IN_MESSAGE = 500
+
+
+def truncate(text: str, limit: int = MAX_BODY_IN_MESSAGE) -> str:
+    """Shorten a server response body for use in a message.
+
+    >>> truncate("short")
+    'short'
+    >>> truncate("abcdef", limit=3)
+    'abc... (6 bytes total)'
+    """
+    if len(text) <= limit:
+        return text
+
+    return f"{text[:limit]}... ({len(text)} bytes total)"
+
 
 def parse_retry_after(value: Any) -> Optional[float]:
     """Parse a `Retry-After` header value into a number of seconds.

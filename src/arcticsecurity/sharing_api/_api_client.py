@@ -16,6 +16,7 @@ import httpx
 
 from . import _util, _version
 from .errors import (
+    AuthError,
     ConfigError,
     Error,
     InvalidTokenError,
@@ -185,6 +186,7 @@ class _ApiClient:
                 url=str(response.url),
             )
         elif response.status_code != 202:
+            self._raise_for_client_error(response, "submit")
             raise NetworkError(
                 f"Unexpected status {response.status_code} for submit, {response.text}",
                 url=str(response.request.url),
@@ -232,6 +234,7 @@ class _ApiClient:
                         url=str(response.url),
                     )
             else:
+                self._raise_for_client_error(response, "loading results")
                 raise Retry(
                     f"Unexpected status {response.status_code} loading results, {response.text}",
                     url=str(response.url),
@@ -279,12 +282,49 @@ class _ApiClient:
                     query.post_url.params.get("token"), url=str(response.url)
                 )
             else:
+                self._raise_for_client_error(response, "fetching results")
                 raise Retry(
                     f"Unexpected status {response.status_code} fetching results, {response.text}",
                     url=str(response.url),
                 )
 
         return response
+
+    @staticmethod
+    def _raise_for_client_error(response: httpx.Response, phase: str) -> None:
+        """Raise for a 4xx that will not become successful by retrying.
+
+        Authentication and authorization failures used to surface as a generic
+        NetworkError ("unexpected status"), which is misleading for what is the
+        single most common user error: a wrong, expired or revoked api key.
+        Likewise a permanent 4xx inside the polling loops used to be reported as
+        a transient `Retry`.
+        """
+        status = response.status_code
+        body = _util.truncate(response.text)
+
+        if status in (401, 403):
+            raise AuthError(
+                f"Sharing API rejected the api key ({status}) for {phase}, {body}",
+                url=str(response.url),
+            )
+        elif status == 404:
+            raise ConfigError(
+                f"Sharing API share not found (404) for {phase}, {body}",
+                url=str(response.url),
+            )
+        elif status == 429:
+            raise Retry(
+                f"Sharing API rate limit exceeded (429) for {phase}, {body}",
+                after=response.headers.get("Retry-After", 10),
+                url=str(response.url),
+            )
+        elif 400 <= status < 500:
+            # Permanent client error, retrying the identical request is futile
+            raise ConfigError(
+                f"Unexpected status {status} for {phase}, {body}",
+                url=str(response.url),
+            )
 
     @staticmethod
     def _server_unavailable(status: int) -> bool:

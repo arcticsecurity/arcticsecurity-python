@@ -197,10 +197,63 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(Server(url))
         api = _api_client._ApiClient(url, transport=xport)
-        with pytest.raises(errors.NetworkError) as excinfo:
+        with pytest.raises(errors.AuthError) as excinfo:
             api.async_query()
-        assert str(excinfo.value) == "Unexpected status 401 for submit, "
+        assert (
+            str(excinfo.value) == "Sharing API rejected the api key (401) for submit, "
+        )
         assert excinfo.value.url == "https://example.com/shares/v2/async/share-id"
+
+    def test_post_fails_on_403(self):
+        """A bad api key gets a 403 from the hub's nginx."""
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(403, text="403 Forbidden")
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.AuthError) as excinfo:
+            api.async_query()
+        # AuthError is a ConfigError, not a NetworkError: retrying will not help
+        assert isinstance(excinfo.value, errors.ConfigError)
+        assert not isinstance(excinfo.value, errors.Retry)
+
+    def test_post_fails_on_404(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(404)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.ConfigError):
+            api.async_query()
+
+    def test_post_fails_on_429(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(429, headers={"Retry-After": "30"})
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.Retry) as excinfo:
+            api.async_query()
+        assert excinfo.value.after == 30
+
+    def test_response_body_truncated_in_error(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(418, text="x" * 10_000)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.Error) as excinfo:
+            api.async_query()
+        assert len(str(excinfo.value)) < 1000
 
     def test_post_fails_on_invalid_parameters(self):
         class Server(MockServer):
@@ -431,9 +484,10 @@ class TestApi:
                 "https://example.com/shares/v2/async/share-id/jobs/"
             )
         else:
-            with pytest.raises(errors.Retry) as excinfo:
+            # A permanent 400 must not be reported as retryable
+            with pytest.raises(errors.ConfigError) as excinfo:
                 api.async_query()
-            assert str(excinfo.value) == "Unexpected status 400 loading results, "
+            assert str(excinfo.value) == "Unexpected status 400 for loading results, "
             assert excinfo.value.url.startswith(
                 "https://example.com/shares/v2/async/share-id/jobs/"
             )
@@ -548,13 +602,14 @@ class TestApi:
                 str(excinfo.value) == "Sharing API server error 500 fetching results, "
             )
         else:
-            with pytest.raises(errors.Retry) as excinfo:
+            # A permanent 400 must not be reported as retryable
+            with pytest.raises(errors.ConfigError) as excinfo:
                 api.async_query()
             assert excinfo.value.url.startswith(
                 "https://example.com/shares/v2/async/share-id/results/"
             )
-            assert str(excinfo.value) == "Unexpected status 400 fetching results, "
-            assert excinfo.value.after is None
+            assert str(excinfo.value) == "Unexpected status 400 for fetching results, "
+            assert not isinstance(excinfo.value, errors.Retry)
 
     def test_invalid_token(self):
         token = "foo"
