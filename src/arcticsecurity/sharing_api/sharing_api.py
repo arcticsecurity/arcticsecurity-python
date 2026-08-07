@@ -57,6 +57,8 @@ class Sync:
         filter: Optional[str] = None,
         projection: Optional[Iterable[str]] = None,
         start: Union[datetime, int, float, None] = None,
+        user_agent: Optional[str] = None,
+        allow_insecure: bool = False,
         **kwargs: Any,
     ):
         """
@@ -81,7 +83,7 @@ class Sync:
 
         projection = _validate_projection(projection)
 
-        client_kwargs = _pop_client_kwargs(kwargs)
+        client_kwargs = _validate_client_kwargs(user_agent, allow_insecure)
 
         if kwargs:
             raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
@@ -195,7 +197,14 @@ class Query:
         "reverse",
     }
 
-    def __init__(self, url: str, **kwargs: Any):
+    def __init__(
+        self,
+        url: str,
+        *,
+        user_agent: Optional[str] = None,
+        allow_insecure: bool = False,
+        **kwargs: Any,
+    ):
         """
         Initialize Query class.
 
@@ -210,7 +219,7 @@ class Query:
         if not isinstance(url, str):
             raise TypeError(f"url must be string not {type(url)}")
 
-        client_kwargs = _pop_client_kwargs(kwargs)
+        client_kwargs = _validate_client_kwargs(user_agent, allow_insecure)
 
         if kwargs:
             raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
@@ -393,13 +402,13 @@ def _validate_projection(
     return keys
 
 
-def _pop_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Pop and validate the api client arguments shared by Sync and Query."""
-    user_agent = kwargs.pop("user_agent", None)
+def _validate_client_kwargs(
+    user_agent: Optional[str], allow_insecure: bool
+) -> dict[str, Any]:
+    """Validate the api client arguments shared by Sync and Query."""
     if not (user_agent is None or isinstance(user_agent, str)):
         raise TypeError(f"user_agent must be string or None, not {type(user_agent)}")
 
-    allow_insecure = kwargs.pop("allow_insecure", False)
     if not isinstance(allow_insecure, bool):
         raise TypeError(f"allow_insecure must be bool, not {type(allow_insecure)}")
 
