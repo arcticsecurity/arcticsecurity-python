@@ -52,6 +52,8 @@ class Sync:
             filter: Rulelang filter.
             projection: List of event field names to include in the results. Note that the list of keys provided by the server can only be limited by this parameter.
             start: Start time for the initial query. Can also be set with seek(). Default value `None` means current time. Positive numbers are interpret as epoch time. Non-positive numbers are interpret as that many seconds in the past.
+            user_agent: Value appended to the `User-Agent` request header.
+            allow_insecure: Accept a plain `http` url. The api key is sent on every request, so it is then transmitted in cleartext. Intended for development servers only.
         """
 
         # Check args
@@ -184,6 +186,8 @@ class Query:
         Args:
             url: Sharing API url, must be an `https` url and must include
                 `apikey` query parameter.
+            user_agent: Value appended to the `User-Agent` request header.
+            allow_insecure: Accept a plain `http` url. The api key is sent on every request, so it is then transmitted in cleartext. Intended for development servers only.
         """
 
         # Check args
