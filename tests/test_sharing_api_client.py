@@ -197,10 +197,122 @@ class TestApi:
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         xport = httpx.MockTransport(Server(url))
         api = _api_client._ApiClient(url, transport=xport)
-        with pytest.raises(errors.NetworkError) as excinfo:
+        with pytest.raises(errors.AuthError) as excinfo:
             api.async_query()
-        assert str(excinfo.value) == "Unexpected status 401 for submit, "
+        assert (
+            str(excinfo.value) == "Sharing API rejected the api key (401) for submit, "
+        )
         assert excinfo.value.url == "https://example.com/shares/v2/async/share-id"
+
+    def test_post_fails_on_403(self):
+        """A bad api key gets a 403 from the hub's nginx."""
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(403, text="403 Forbidden")
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.AuthError) as excinfo:
+            api.async_query()
+        # AuthError is a ConfigError, not a NetworkError: retrying will not help
+        assert isinstance(excinfo.value, errors.ConfigError)
+        assert not isinstance(excinfo.value, errors.Retry)
+
+    def test_post_fails_on_404(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(404)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.ConfigError):
+            api.async_query()
+
+    def test_post_fails_on_429(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(429, headers={"Retry-After": "30"})
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.Retry) as excinfo:
+            api.async_query()
+        assert excinfo.value.after == 30
+
+    def test_response_body_truncated_in_error(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(418, text="x" * 10_000)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.Error) as excinfo:
+            api.async_query()
+        assert len(str(excinfo.value)) < 1000
+
+    @pytest.mark.parametrize("phase", ["post", "status", "results"])
+    @pytest.mark.parametrize("code", [299, 500])
+    def test_response_body_truncated_in_every_error(self, phase, code):
+        body = "x" * 10_000
+
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                if phase == "post":
+                    return httpx.Response(code, text=body)
+                return super().handle_post_query(request)
+
+            def handle_get_status(self, request):
+                if phase == "status":
+                    return httpx.Response(code, text=body)
+                return super().handle_get_status(request)
+
+            def handle_get_results(self, request):
+                if phase == "results":
+                    return httpx.Response(code, text=body)
+                return super().handle_get_results(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        api.sleep_before_first_status_query = 0
+        with pytest.raises(errors.Error) as excinfo:
+            api.async_query()
+        assert len(str(excinfo.value)) < 1000
+
+    def test_response_body_truncated_in_unavailable_log(self, caplog):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                return httpx.Response(503, text="x" * 10_000)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with caplog.at_level("DEBUG"), pytest.raises(errors.Retry):
+            api.async_query()
+        assert caplog.records
+        assert all(len(r.getMessage()) < 1000 for r in caplog.records)
+
+    def test_invalid_inputs_truncated_in_error(self):
+        class Server(MockServer):
+            def handle_post_query(self, request):
+                errors = [
+                    {"key": "k", "type": "query validation", "message": "x" * 10_000}
+                ]
+                return httpx.Response(
+                    400, json={"title": "400 Invalid input(s)", "errors": errors}
+                )
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(url, transport=xport)
+        with pytest.raises(errors.ConfigError) as excinfo:
+            api.async_query()
+        assert len(str(excinfo.value)) < 1000
 
     def test_post_fails_on_invalid_parameters(self):
         class Server(MockServer):
@@ -431,9 +543,10 @@ class TestApi:
                 "https://example.com/shares/v2/async/share-id/jobs/"
             )
         else:
-            with pytest.raises(errors.Retry) as excinfo:
+            # A permanent 400 must not be reported as retryable
+            with pytest.raises(errors.ConfigError) as excinfo:
                 api.async_query()
-            assert str(excinfo.value) == "Unexpected status 400 loading results, "
+            assert str(excinfo.value) == "Unexpected status 400 for loading results, "
             assert excinfo.value.url.startswith(
                 "https://example.com/shares/v2/async/share-id/jobs/"
             )
@@ -548,13 +661,14 @@ class TestApi:
                 str(excinfo.value) == "Sharing API server error 500 fetching results, "
             )
         else:
-            with pytest.raises(errors.Retry) as excinfo:
+            # A permanent 400 must not be reported as retryable
+            with pytest.raises(errors.ConfigError) as excinfo:
                 api.async_query()
             assert excinfo.value.url.startswith(
                 "https://example.com/shares/v2/async/share-id/results/"
             )
-            assert str(excinfo.value) == "Unexpected status 400 fetching results, "
-            assert excinfo.value.after is None
+            assert str(excinfo.value) == "Unexpected status 400 for fetching results, "
+            assert not isinstance(excinfo.value, errors.Retry)
 
     def test_invalid_token(self):
         token = "foo"

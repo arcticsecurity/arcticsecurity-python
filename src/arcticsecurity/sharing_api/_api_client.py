@@ -16,6 +16,7 @@ import httpx
 
 from . import _util, _version
 from .errors import (
+    AuthError,
     ConfigError,
     Error,
     InvalidTokenError,
@@ -171,22 +172,27 @@ class _ApiClient:
 
         if self._server_unavailable(response.status_code):
             logger.debug(
-                f"Error posting job, retry later ({response.status_code} {response.text})"
+                f"Error posting job, retry later ({response.status_code} {_util.truncate(response.text)})"
             )
             # Server error on initial post -> suggest retrying whole query later again
             raise Retry(
                 after=response.headers.get("Retry-After", 10), url=str(response.url)
             )
         elif (invalid_inputs := self._invalid_input_error(response)) is not None:
-            raise ConfigError(invalid_inputs, url=str(response.url))
+            raise ConfigError(
+                f"Sharing API rejected the query inputs for submit,"
+                f" {_util.truncate(json.dumps(invalid_inputs))}",
+                url=str(response.url),
+            )
         elif response.status_code == 500:
             raise ServerError(
-                f"Sharing API server error 500 for submit, {response.text}",
+                f"Sharing API server error 500 for submit, {_util.truncate(response.text)}",
                 url=str(response.url),
             )
         elif response.status_code != 202:
+            self._raise_for_client_error(response, "submit")
             raise NetworkError(
-                f"Unexpected status {response.status_code} for submit, {response.text}",
+                f"Unexpected status {response.status_code} for submit, {_util.truncate(response.text)}",
                 url=str(response.request.url),
             )
 
@@ -215,12 +221,12 @@ class _ApiClient:
                 )
             elif response.status_code == 500:
                 raise ServerError(
-                    f"Sharing API server error 500 getting status, {response.text}",
+                    f"Sharing API server error 500 getting status, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
             elif self._server_unavailable(response.status_code):
                 logger.debug(
-                    f"Error getting status, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
+                    f"Error getting status, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {_util.truncate(response.text)})"
                 )
                 time.sleep(self.sleep_after_50x_error_within_query)
             elif response.status_code == 410:
@@ -232,8 +238,9 @@ class _ApiClient:
                         url=str(response.url),
                     )
             else:
+                self._raise_for_client_error(response, "loading results")
                 raise Retry(
-                    f"Unexpected status {response.status_code} loading results, {response.text}",
+                    f"Unexpected status {response.status_code} loading results, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
 
@@ -264,13 +271,13 @@ class _ApiClient:
                     )
             elif response.status_code == 500:
                 raise ServerError(
-                    f"Sharing API server error 500 fetching results, {response.text}",
+                    f"Sharing API server error 500 fetching results, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
             elif self._server_unavailable(response.status_code):
                 # sleep only 1 sec since results are stored only for a limited time
                 logger.debug(
-                    f"Error getting results, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
+                    f"Error getting results, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {_util.truncate(response.text)})"
                 )
                 time.sleep(self.sleep_after_50x_error_within_query)
             elif self._is_invalid_token_error(response):
@@ -279,12 +286,49 @@ class _ApiClient:
                     query.post_url.params.get("token"), url=str(response.url)
                 )
             else:
+                self._raise_for_client_error(response, "fetching results")
                 raise Retry(
-                    f"Unexpected status {response.status_code} fetching results, {response.text}",
+                    f"Unexpected status {response.status_code} fetching results, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
 
         return response
+
+    @staticmethod
+    def _raise_for_client_error(response: httpx.Response, phase: str) -> None:
+        """Raise for a 4xx that will not become successful by retrying.
+
+        Authentication and authorization failures used to surface as a generic
+        NetworkError ("unexpected status"), which is misleading for what is the
+        single most common user error: a wrong, expired or revoked api key.
+        Likewise a permanent 4xx inside the polling loops used to be reported as
+        a transient `Retry`.
+        """
+        status = response.status_code
+        body = _util.truncate(response.text)
+
+        if status in (401, 403):
+            raise AuthError(
+                f"Sharing API rejected the api key ({status}) for {phase}, {body}",
+                url=str(response.url),
+            )
+        elif status == 404:
+            raise ConfigError(
+                f"Sharing API share not found (404) for {phase}, {body}",
+                url=str(response.url),
+            )
+        elif status == 429:
+            raise Retry(
+                f"Sharing API rate limit exceeded (429) for {phase}, {body}",
+                after=response.headers.get("Retry-After", 10),
+                url=str(response.url),
+            )
+        elif 400 <= status < 500:
+            # Permanent client error, retrying the identical request is futile
+            raise ConfigError(
+                f"Unexpected status {status} for {phase}, {body}",
+                url=str(response.url),
+            )
 
     @staticmethod
     def _server_unavailable(status: int) -> bool:
