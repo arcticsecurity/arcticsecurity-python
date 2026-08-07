@@ -127,6 +127,26 @@ class TestShareUrls:
         )
         assert "SUPERSECRET" not in repr(api.urls)
 
+    def test_http_url_rejected(self):
+        """Plain http would send the api key in cleartext."""
+        with pytest.raises(errors.ConfigError):
+            _api_client._ShareUrls("http://example.com/shares/v2/s?apikey=k")
+
+    def test_http_url_allowed_when_opted_in(self):
+        urls = _api_client._ShareUrls(
+            "http://example.com/shares/v2/s?apikey=k", allow_insecure=True
+        )
+        assert urls.base_url == "http://example.com"
+
+    @pytest.mark.parametrize("url", ["file:///etc/passwd?apikey=k", "/shares/v2/s"])
+    def test_non_http_url_rejected(self, url):
+        with pytest.raises(errors.ConfigError):
+            _api_client._ShareUrls(url)
+
+    def test_https_url_without_host_rejected(self):
+        with pytest.raises(errors.ConfigError):
+            _api_client._ShareUrls("https:///shares/v2/s?apikey=k")
+
 
 class TestApi:
     """Test _Api."""
