@@ -107,6 +107,27 @@ class MockServer:
         )
 
 
+class TestShareUrls:
+    """Test _ShareUrls."""
+
+    def test_apikey_not_in_repr(self):
+        """The api key must never leak through repr()/str()."""
+        urls = _api_client._ShareUrls(
+            "https://example.com/shares/v2/share-id?apikey=SUPERSECRET"
+        )
+        assert "SUPERSECRET" not in repr(urls)
+        assert "SUPERSECRET" not in str(urls)
+        # ...but it is still usable for authentication
+        assert urls.authorization_header == {"Authorization": "token SUPERSECRET"}
+
+    def test_apikey_not_in_client_repr(self):
+        """The api key must not leak through the client either."""
+        api = _api_client._ApiClient(
+            "https://example.com/shares/v2/share-id?apikey=SUPERSECRET"
+        )
+        assert "SUPERSECRET" not in repr(api.urls)
+
+
 class TestApi:
     """Test _Api."""
 
