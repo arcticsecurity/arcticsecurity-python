@@ -45,7 +45,8 @@ class Sync:
         Initialize Sync class.
 
         Args:
-            url: Sharing API url, must include `apikey` query parameter.
+            url: Sharing API url, must be an `https` url and must include
+                `apikey` query parameter.
             filter: Rulelang filter.
             projection: List of event field names to include in the results. Note that the list of keys provided by the server can only be limited by this parameter.
             start: Start time for the initial query. Can also be set with seek(). Default value `None` means current time. Positive numbers are interpret as epoch time. Non-positive numbers are interpret as that many seconds in the past.
@@ -70,17 +71,13 @@ class Sync:
                 "projection must be a list of key names, each an instance of str"
             )
 
-        user_agent = kwargs.pop("user_agent", None)
-        if not (user_agent is None or isinstance(user_agent, str)):
-            raise TypeError(
-                f"user_agent must be string or None, not {type(user_agent)}"
-            )
+        client_kwargs = _pop_client_kwargs(kwargs)
 
         if kwargs:
             raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
 
         # Initialize client
-        self.api_client = _ApiClient(url, user_agent=user_agent)
+        self.api_client = _ApiClient(url, **client_kwargs)
 
         invalid_qps_in_url = (
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
@@ -197,24 +194,21 @@ class Query:
         Initialize Query class.
 
         Args:
-            url: Sharing API url, must include `apikey` query parameter.
+            url: Sharing API url, must be an `https` url and must include
+                `apikey` query parameter.
         """
 
         # Check args
         if not isinstance(url, str):
             raise TypeError(f"url must be string not {type(url)}")
 
-        user_agent = kwargs.pop("user_agent", None)
-        if not (user_agent is None or isinstance(user_agent, str)):
-            raise TypeError(
-                f"user_agent must be string or None, not {type(user_agent)}"
-            )
+        client_kwargs = _pop_client_kwargs(kwargs)
 
         if kwargs:
             raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
 
         # Initialize client
-        self.api_client = _ApiClient(url, user_agent=user_agent)
+        self.api_client = _ApiClient(url, **client_kwargs)
 
         invalid_qps_in_url = (
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
@@ -333,6 +327,19 @@ class Query:
 def query(url: str, **kwargs: Any) -> Iterable[Event]:
     """Shortcut to Query(url).query()."""
     return Query(url).query(**kwargs)
+
+
+def _pop_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Pop and validate the api client arguments shared by Sync and Query."""
+    user_agent = kwargs.pop("user_agent", None)
+    if not (user_agent is None or isinstance(user_agent, str)):
+        raise TypeError(f"user_agent must be string or None, not {type(user_agent)}")
+
+    allow_insecure = kwargs.pop("allow_insecure", False)
+    if not isinstance(allow_insecure, bool):
+        raise TypeError(f"allow_insecure must be bool, not {type(allow_insecure)}")
+
+    return {"user_agent": user_agent, "allow_insecure": allow_insecure}
 
 
 def _remove_none_values(d: dict[str, Optional[Any]]) -> dict[str, Any]:

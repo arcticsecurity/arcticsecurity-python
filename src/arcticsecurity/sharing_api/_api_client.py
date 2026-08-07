@@ -97,11 +97,12 @@ class _ApiClient:
         url: str,
         *,
         user_agent: Optional[str] = None,
+        allow_insecure: bool = False,
         transport: Optional[httpx.BaseTransport] = None,
         sleep_before_first_status_query: float = 0.5,
         sleep_after_50x_error_within_query: float = 10,
     ):
-        self.urls = _ShareUrls(url)
+        self.urls = _ShareUrls(url, allow_insecure=allow_insecure)
         self.user_agent = user_agent or _version.user_agent
 
         # Transport to use in httpx client. Should only be defined in testing
@@ -342,8 +343,12 @@ class _ShareUrls:
     authorization_header: dict[str, str] = field(repr=False)
     qp: dict[str, list[str]]
 
-    def __init__(self, sync_url: str):
+    def __init__(self, sync_url: str, *, allow_insecure: bool = False):
         """Build urls from a sync url.
+
+        The provided sync url must be an `https` url, since the api key is sent
+        to the server on every request. `allow_insecure` opts out of that check
+        for e.g. development servers, and sends the api key in cleartext.
 
         The provided sync url must have apikey query parameter, which will be
         separated from the url and used in the Authorization header on async api
@@ -361,8 +366,21 @@ class _ShareUrls:
         >>> _ShareUrls("https://example.com/shares/v2/share-id?filter=foo=bar")
         Traceback (most recent call last):
         arcticsecurity.sharing_api.errors.ConfigError: API share url must have apikey parameter
+        >>> _ShareUrls("http://example.com/shares/v2/share-id?apikey=api-key")
+        Traceback (most recent call last):
+        arcticsecurity.sharing_api.errors.ConfigError: API share url must use https, not 'http' (pass allow_insecure=True to override)
         """
         o = urlparse(sync_url)
+
+        if o.scheme != "https" and not (allow_insecure and o.scheme == "http"):
+            raise ConfigError(
+                f"API share url must use https, not {o.scheme!r}"
+                " (pass allow_insecure=True to override)"
+            )
+
+        if not o.netloc:
+            raise ConfigError(f"API share url has no host: {sync_url!r}")
+
         qp = parse_qs(o.query, keep_blank_values=True)
 
         if "apikey" not in qp:
