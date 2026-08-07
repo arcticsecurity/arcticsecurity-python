@@ -36,6 +36,46 @@ class TestTimeout:
         timeout.start()
         timeout.check()
 
+    def test_remaining_without_timeout(self):
+        assert _api_client.Timeout(None).remaining() is None
+
+    def test_sleep_does_not_overshoot_budget(self):
+        """Sleeping the full server-requested delay would blow the budget."""
+        timeout = _api_client.Timeout(0.05)
+        started = time.monotonic()
+        with pytest.raises(errors.TimeoutError):
+            timeout.sleep(5)
+        assert time.monotonic() - started < 1
+
+    def test_sleep_waits_out_the_rest_of_the_budget(self, monkeypatch):
+        """The remaining budget is waited out before giving up."""
+        slept = []
+        monkeypatch.setattr(_api_client.time, "sleep", slept.append)
+
+        timeout = _api_client.Timeout(10)
+        with pytest.raises(errors.TimeoutError):
+            timeout.sleep(30)
+
+        assert len(slept) == 1
+        assert 0 < slept[0] <= 10, "should wait the remaining budget, not the 30s"
+
+    def test_sleep_within_budget_sleeps_fully(self, monkeypatch):
+        """A delay that fits in the budget is slept in full."""
+        slept = []
+        monkeypatch.setattr(_api_client.time, "sleep", slept.append)
+
+        _api_client.Timeout(10).sleep(0.02)
+
+        assert slept == [0.02]
+
+    def test_sleep_without_timeout_sleeps_fully(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr(_api_client.time, "sleep", slept.append)
+
+        _api_client.Timeout(None).sleep(0.02)
+
+        assert slept == [0.02]
+
 
 class MockServer:
     """Mock sharing REST API."""
@@ -834,6 +874,49 @@ class TestApi:
         )
         with pytest.raises(errors.TimeoutError):
             api.async_query(timeout=0.01)
+
+    def test_timeout_is_not_overshot_by_retry_after(self):
+        """The overall timeout must bound the polling sleeps, not just be
+        checked after them."""
+
+        class Server(MockServer):
+            def handle_get_status(self, request):
+                return httpx.Response(202, headers={"Retry-After": "30"})
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        started = time.monotonic()
+        with pytest.raises(errors.TimeoutError):
+            api.async_query(timeout=0.05)
+        assert time.monotonic() - started < 5
+
+    @pytest.mark.parametrize("code", [502, 503, 504])
+    def test_unavailable_retries_are_bounded(self, code):
+        """A server stuck on 50x must not loop forever when timeout is None."""
+
+        class Server(MockServer):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.n = 0
+
+            def handle_get_status(self, request):
+                self.n += 1
+                return httpx.Response(code)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        server = Server(url)
+        api = _api_client._ApiClient(
+            url,
+            transport=httpx.MockTransport(server),
+            sleep_before_first_status_query=0,
+            sleep_after_50x_error_within_query=0,
+        )
+        with pytest.raises(errors.Retry):
+            api.async_query(timeout=None)
+        assert server.n == api.max_unavailable_retries
 
     def test_default_user_agent(self):
         class Server(MockServer):
