@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 class Timeout:
+    """Wall-clock budget for one 3-phase query."""
+
     def __init__(self, timeout: Optional[float]):
         self._max_duration = timeout or 0
         self._start_ts = time.monotonic()
@@ -40,9 +42,35 @@ class Timeout:
     def stop(self) -> None:
         pass
 
+    def remaining(self) -> Optional[float]:
+        """Seconds left in the budget, or None if there is no timeout."""
+        if self._max_duration <= 0:
+            return None
+
+        return self._max_duration - (time.monotonic() - self._start_ts)
+
     def check(self) -> None:
-        if 0 < self._max_duration < time.monotonic() - self._start_ts:
+        remaining = self.remaining()
+        if remaining is not None and remaining < 0:
             raise TimeoutError("Query timed out")
+
+    def sleep(self, seconds: float) -> None:
+        """Sleep, but never past the end of the budget.
+
+        Sleeping the full server-requested delay and only then checking the
+        budget made the timeout overshoot arbitrarily: a `timeout=0.1` query
+        against a server answering `Retry-After: 5` returned after 5 seconds.
+        """
+        self.check()
+
+        remaining = self.remaining()
+        if remaining is not None:
+            seconds = min(seconds, remaining)
+
+        if seconds > 0:
+            time.sleep(seconds)
+
+        self.check()
 
 
 @dataclass
@@ -102,6 +130,7 @@ class _ApiClient:
         transport: Optional[httpx.BaseTransport] = None,
         sleep_before_first_status_query: float = 0.5,
         sleep_after_50x_error_within_query: float = 10,
+        max_unavailable_retries: int = 10,
     ):
         self.urls = _ShareUrls(url, allow_insecure=allow_insecure)
         self.user_agent = user_agent or _version.user_agent
@@ -113,6 +142,9 @@ class _ApiClient:
         # Time to wait after 50x response within a query. These are typically
         # transitory errors on the server side
         self.sleep_after_50x_error_within_query = sleep_after_50x_error_within_query
+        # Consecutive 50x responses tolerated within a query before giving up.
+        # Bounds the retry loops when there is no timeout.
+        self.max_unavailable_retries = max_unavailable_retries
 
     def _get_client(self) -> httpx.Client:
         """Initiaze new client."""
@@ -148,7 +180,7 @@ class _ApiClient:
 
         with self._init_query(timeout) as query:
             status_url = self._async_post_query(query, qp)
-            time.sleep(self.sleep_before_first_status_query)
+            query.timeout.sleep(self.sleep_before_first_status_query)
             result_url = self._async_get_result_url(query, status_url)
             return self._async_get_result_response(query, result_url)
 
@@ -199,6 +231,8 @@ class _ApiClient:
 
     def _async_get_result_url(self, query: Query, url: str) -> str:
         """GET async result url from status url."""
+        unavailable_attempts = 0
+
         while True:
             try:
                 response = query.client.get(url=url, follow_redirects=False)
@@ -212,19 +246,25 @@ class _ApiClient:
                 # results are ready
                 break
             elif response.status_code == 202:
-                time.sleep(
+                unavailable_attempts = 0
+                query.timeout.sleep(
                     _util.retry_after_delay(response.headers.get("Retry-After"), 1)
                 )
             elif response.status_code == 500:
                 raise ServerError(
-                    f"Sharing API server error 500 getting status, {response.text}",
+                    f"Sharing API server error 500 getting status, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
             elif self._server_unavailable(response.status_code):
-                logger.debug(
-                    f"Error getting status, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
+                unavailable_attempts += 1
+                self._check_unavailable_attempts(
+                    unavailable_attempts, response, "getting status"
                 )
-                time.sleep(self.sleep_after_50x_error_within_query)
+                logger.debug(
+                    f"Error getting status, try again after {self.sleep_after_50x_error_within_query} secs"
+                    f" ({response.status_code} {_util.truncate(response.text)})"
+                )
+                query.timeout.sleep(self.sleep_after_50x_error_within_query)
             elif response.status_code == 410:
                 if response.headers.get("X-STATUS") == "Job expired":
                     raise Error("The query has expired", url=str(response.url))
@@ -247,6 +287,8 @@ class _ApiClient:
 
     def _async_get_result_response(self, query: Query, url: str) -> httpx.Response:
         """GET async result response."""
+        unavailable_attempts = 0
+
         while True:
             try:
                 response = query.client.get(url)
@@ -267,15 +309,19 @@ class _ApiClient:
                     )
             elif response.status_code == 500:
                 raise ServerError(
-                    f"Sharing API server error 500 fetching results, {response.text}",
+                    f"Sharing API server error 500 fetching results, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
             elif self._server_unavailable(response.status_code):
-                # sleep only 1 sec since results are stored only for a limited time
-                logger.debug(
-                    f"Error getting results, try again after {self.sleep_after_50x_error_within_query} secs ({response.status_code} {response.text})"
+                unavailable_attempts += 1
+                self._check_unavailable_attempts(
+                    unavailable_attempts, response, "fetching results"
                 )
-                time.sleep(self.sleep_after_50x_error_within_query)
+                logger.debug(
+                    f"Error getting results, try again after {self.sleep_after_50x_error_within_query} secs"
+                    f" ({response.status_code} {_util.truncate(response.text)})"
+                )
+                query.timeout.sleep(self.sleep_after_50x_error_within_query)
             elif self._is_invalid_token_error(response):
                 assert query.post_url is not None  # for mypy
                 raise InvalidTokenError(
@@ -289,6 +335,24 @@ class _ApiClient:
                 )
 
         return response
+
+    def _check_unavailable_attempts(
+        self, attempts: int, response: httpx.Response, phase: str
+    ) -> None:
+        """Give up once the server has been unavailable too many times in a row.
+
+        Without this, a query with `timeout=None` against a server stuck on
+        502/503/504 loops forever.
+        """
+        if attempts < self.max_unavailable_retries:
+            return
+
+        raise Retry(
+            f"Sharing API unavailable ({response.status_code}) for {phase}"
+            f" after {attempts} attempts",
+            after=response.headers.get("Retry-After", 10),
+            url=str(response.url),
+        )
 
     @staticmethod
     def _raise_for_client_error(response: httpx.Response, phase: str) -> None:
