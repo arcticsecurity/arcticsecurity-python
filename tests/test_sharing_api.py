@@ -527,3 +527,22 @@ class TestSync:
 
         with pytest.raises(TypeError):
             sync.seek("2025-01-01")
+
+
+class TestPublicApi:
+    """The names a user needs to import to type annotate their own code."""
+
+    def test_sync_read_response_is_exported(self):
+        assert sharing_api.SyncReadResponse is not None
+
+    def test_event_is_exported(self):
+        assert sharing_api.Event is not None
+
+    def test_read_returns_the_exported_type(self):
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        sync = sharing_api.Sync(url)
+        sync.api_client = MockClient(url, events=())
+
+        res = sync.read()
+
+        assert isinstance(res, sharing_api.SyncReadResponse)
