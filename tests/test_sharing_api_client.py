@@ -11,7 +11,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from arcticsecurity.sharing_api import _api_client, _version, errors
+from arcticsecurity.sharing_api import _api_client, _util, _version, errors
 
 
 class TestTimeout:
@@ -314,6 +314,66 @@ class TestApi:
         resp = api.async_query()
         assert resp.status_code == 200
         assert resp.json() == list(chain(*events))
+
+    @pytest.mark.parametrize(
+        "retry_after",
+        [
+            "Wed, 21 Oct 2015 07:28:00 GMT",  # HTTP-date form, RFC 9110
+            "garbage",
+            "",
+            "0.0",
+        ],
+    )
+    def test_get_status_202_non_integer_retry_after(self, retry_after):
+        """A non-integer Retry-After must not escape as a raw ValueError."""
+
+        class Server(MockServer):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.i = 0
+
+            def handle_get_status(self, request):
+                self.i += 1
+
+                if self.i == 1:
+                    return httpx.Response(202, headers={"Retry-After": retry_after})
+                else:
+                    return super().handle_get_status(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        events = ([{"uuid": str(uuid4())}],)
+        xport = httpx.MockTransport(Server(url, events=events))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        resp = api.async_query()
+        assert resp.json() == list(chain(*events))
+
+    def test_get_status_202_huge_retry_after_is_clamped(self, monkeypatch):
+        """A hostile Retry-After must not block the caller for days."""
+        slept = []
+        monkeypatch.setattr(_api_client.time, "sleep", slept.append)
+
+        class Server(MockServer):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.i = 0
+
+            def handle_get_status(self, request):
+                self.i += 1
+
+                if self.i == 1:
+                    return httpx.Response(202, headers={"Retry-After": "999999"})
+                else:
+                    return super().handle_get_status(request)
+
+        url = "https://example.com/shares/v2/share-id?apikey=k1"
+        xport = httpx.MockTransport(Server(url, events=([{"uuid": "x"}],)))
+        api = _api_client._ApiClient(
+            url, transport=xport, sleep_before_first_status_query=0
+        )
+        api.async_query()
+        assert max(slept) <= _util.MAX_RETRY_AFTER
 
     @pytest.mark.parametrize("code", [502, 503, 504])
     def test_get_status_50x_302(self, code):
