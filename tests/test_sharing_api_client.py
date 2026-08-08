@@ -47,11 +47,34 @@ class TestTimeout:
             timeout.sleep(5)
         assert time.monotonic() - started < 1
 
-    def test_sleep_without_timeout_sleeps_fully(self):
-        timeout = _api_client.Timeout(None)
-        started = time.monotonic()
-        timeout.sleep(0.02)
-        assert time.monotonic() - started >= 0.02
+    def test_sleep_waits_out_the_rest_of_the_budget(self, monkeypatch):
+        """The remaining budget is waited out before giving up."""
+        slept = []
+        monkeypatch.setattr(_api_client.time, "sleep", slept.append)
+
+        timeout = _api_client.Timeout(10)
+        with pytest.raises(errors.TimeoutError):
+            timeout.sleep(30)
+
+        assert len(slept) == 1
+        assert 0 < slept[0] <= 10, "should wait the remaining budget, not the 30s"
+
+    def test_sleep_within_budget_sleeps_fully(self, monkeypatch):
+        """A delay that fits in the budget is slept in full."""
+        slept = []
+        monkeypatch.setattr(_api_client.time, "sleep", slept.append)
+
+        _api_client.Timeout(10).sleep(0.02)
+
+        assert slept == [0.02]
+
+    def test_sleep_without_timeout_sleeps_fully(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr(_api_client.time, "sleep", slept.append)
+
+        _api_client.Timeout(None).sleep(0.02)
+
+        assert slept == [0.02]
 
 
 class MockServer:

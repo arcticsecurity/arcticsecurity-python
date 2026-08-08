@@ -60,12 +60,21 @@ class Timeout:
         Sleeping the full server-requested delay and only then checking the
         budget made the timeout overshoot arbitrarily: a `timeout=0.1` query
         against a server answering `Retry-After: 5` returned after 5 seconds.
+
+        A delay that does not fit in the remaining budget ends the query. The
+        budget is spent once it has been waited out, so returning to the caller
+        with nothing left would only lead to another request that cannot be
+        completed. Deciding this from the requested delay rather than from the
+        clock afterwards also keeps the outcome independent of the platform
+        clock resolution.
         """
         self.check()
 
         remaining = self.remaining()
-        if remaining is not None:
-            seconds = min(seconds, remaining)
+        if remaining is not None and seconds >= remaining:
+            if remaining > 0:
+                time.sleep(remaining)
+            raise TimeoutError("Query timed out")
 
         if seconds > 0:
             time.sleep(seconds)
