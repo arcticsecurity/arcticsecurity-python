@@ -28,7 +28,9 @@ for event in Query(url).query(filter='"network owner"="Example Co"', max_events=
 
 ### Sync
 
-Use the `Sync` class to reliably fetch all event data. It uses pagination with opaque continuation tokens to ensure no events are missed.
+Use the `Sync` class to reliably synchronize all event data. It uses pagination with opaque continuation tokens to ensure no events are missed.
+
+Here `Sync` means keeping your own copy of the events synchronized. It is unrelated to the Sharing API's synchronous endpoints: both classes use the asynchronous ones.
 
 ```python
 from arcticsecurity.sharing_api import Sync
