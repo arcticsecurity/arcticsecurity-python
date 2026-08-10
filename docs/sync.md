@@ -1,6 +1,8 @@
-## Sync API
+## Sync
 
 The `Sync` class reads all events matching user-provided conditions and provides tokens to enable reliable synchronization. Events are returned in database insertion order, which guarantees that no events are lost during synchronization.
+
+The class is named after that synchronization, not after the Sharing API's synchronous endpoints. `Sync` and `Query` both query the API through its asynchronous endpoints.
 
 ### Methods
 

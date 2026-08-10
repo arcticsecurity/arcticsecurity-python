@@ -43,7 +43,16 @@ class SyncReadResponse:
 
 
 class Sync:
-    """Sync events from sharing API."""
+    """Synchronize events from sharing API.
+
+    Reads every event matching the given conditions in database insertion
+    order, so that a caller can keep its own copy of the events up to date
+    without missing any.
+
+    The name refers to that synchronization, not to the sharing API's
+    synchronous endpoints. This class queries the asynchronous endpoints,
+    as `Query` does.
+    """
 
     allowed_user_provided_qps = {
         "filter",
@@ -112,7 +121,7 @@ class Sync:
         pagesize: int = 1000,
         timeout: Optional[float] = 600,
     ) -> SyncReadResponse:
-        """Sync events from sharing API
+        """Read the next batch of events to synchronize.
 
         Events are returned sorted by insertion time.
 
