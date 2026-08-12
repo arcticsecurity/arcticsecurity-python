@@ -85,4 +85,6 @@ Issues and pull requests are welcome. Please add tests for any new behavior.
 
 ## Status
 
-Experimental (`0.1.x`); the API may evolve. Pin the library version for production use.
+Experimental (`0.x`); the API may evolve. Pin the library version for production use.
+
+See [CHANGELOG.md](CHANGELOG.md) for the changes in each release.
