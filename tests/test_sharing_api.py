@@ -12,6 +12,7 @@ import httpx
 import pytest
 
 from arcticsecurity import sharing_api
+from arcticsecurity.sharing_api import errors
 from arcticsecurity.sharing_api._api_client import _ApiClient
 
 # should be ok for these tests for last_inserted_token to be always the same
@@ -133,6 +134,40 @@ class TestQuery:
         rx_events = list(query.query(max_events=max_events))
         assert rx_events == list(chain(*events))
 
+    def test_projection_generator_is_materialized(self):
+        """A generator projection must survive validation and every page."""
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        events = (
+            [{"uuid": str(uuid4())}],
+            [{"uuid": str(uuid4())}],
+        )
+        tokens = (str(uuid4()),)
+
+        class RecordingClient(MockClient):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.seen_projections = []
+
+            def async_query(self, params=None, **kwargs):
+                self.seen_projections.append((params or {}).get("projection"))
+                return super().async_query(params, **kwargs)
+
+        query = sharing_api.Query(url)
+        client = RecordingClient(url, events=events, tokens=tokens)
+        query.api_client = client
+
+        rx_events = list(query.query(projection=(x for x in ["uuid", "severity"])))
+
+        assert rx_events == list(chain(*events))
+        assert client.seen_projections == [["uuid", "severity"]] * 2
+
+    @no_type_check
+    def test_projection_rejects_non_str_items(self):
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        query = sharing_api.Query(url)
+        with pytest.raises(TypeError):
+            list(query.query(projection=(x for x in ["uuid", 1])))
+
     def test_unknown_query_param_in_url(self):
         """Test unknown qp in url raises error."""
         sid = "share-id"
@@ -200,6 +235,54 @@ class TestQuery:
 
         with pytest.raises(TypeError):
             next(query.query(timeout="100"))
+
+    @no_type_check
+    def test_query_args_validated_without_iterating(self):
+        """query() is not a bare generator function: bad args must raise at the
+        call, not at the first next()."""
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        query = sharing_api.Query(url)
+
+        for kwargs in (
+            {"filter": 1},
+            {"projection": "feed"},
+            {"start": "2025-01-01"},
+            {"end": "2025-01-01"},
+            {"reverse": 1},
+            {"max_events": None},
+            {"timeout": "100"},
+            {"pagesize": "10"},
+        ):
+            with pytest.raises(TypeError):
+                query.query(**kwargs)
+
+        with pytest.raises(ValueError):
+            query.query(bogus=1)
+
+    def test_invalid_json_raises_server_error(self):
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+
+        class BadClient(MockClient):
+            def async_query(self, *args, **kwargs):
+                return httpx.Response(200, text="not json")
+
+        query = sharing_api.Query(url)
+        query.api_client = BadClient(url)
+        with pytest.raises(errors.ServerError):
+            list(query.query())
+
+    def test_non_list_json_raises_server_error(self):
+        """A JSON object used to make query() yield its keys as events."""
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+
+        class BadClient(MockClient):
+            def async_query(self, *args, **kwargs):
+                return httpx.Response(200, json={"count": 5})
+
+        query = sharing_api.Query(url)
+        query.api_client = BadClient(url)
+        with pytest.raises(errors.ServerError):
+            list(query.query())
 
 
 class TestSync:
@@ -446,3 +529,22 @@ class TestSync:
 
         with pytest.raises(TypeError):
             sync.seek("2025-01-01")
+
+
+class TestPublicApi:
+    """The names a user needs to import to type annotate their own code."""
+
+    def test_sync_read_response_is_exported(self):
+        assert sharing_api.SyncReadResponse is not None
+
+    def test_event_is_exported(self):
+        assert sharing_api.Event is not None
+
+    def test_read_returns_the_exported_type(self):
+        url = "https://example.com/shares/v2/share-id?apikey=api-key"
+        sync = sharing_api.Sync(url)
+        sync.api_client = MockClient(url, events=())
+
+        res = sync.read()
+
+        assert isinstance(res, sharing_api.SyncReadResponse)
