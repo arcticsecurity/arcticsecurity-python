@@ -9,9 +9,6 @@ While the major version is `0`, a minor version bump may contain breaking change
 
 - The share url must now use `https`. Pass
   `allow_insecure=True` to `Sync` or `Query` to opt out for a development server.
-- `user_agent` and `allow_insecure` are explicit keyword-only arguments of `Sync`
-  and `Query`. Any other unknown keyword argument is now rejected instead of
-  being silently ignored.
 - Authentication and permanent client errors are classified as `AuthError` and
   `ConfigError` instead of `NetworkError` or `Retry`.
 - `Query.query` validates its arguments eagerly, so a bad argument now raises
@@ -22,6 +19,10 @@ While the major version is `0`, a minor version bump may contain breaking change
 - `AuthError`, raised when the server rejects the api key (401 / 403). It is a
   subclass of `ConfigError`, since it always means the share url needs fixing.
 - `SyncReadResponse` and `Event` are exported from `arcticsecurity.sharing_api`.
+- `user_agent` and `allow_insecure` are explicit keyword-only parameters of
+  `Sync` and `Query`, so they show up in the signatures, the API documentation
+  and type checkers. Unknown keyword arguments still raise `ValueError`, as
+  before.
 
 ### Fixed
 
