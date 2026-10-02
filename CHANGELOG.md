@@ -39,7 +39,9 @@ While the major version is `0`, a minor version bump may contain breaking change
   `json.JSONDecodeError`, and a JSON object is no longer yielded as if its keys
   were events.
 - Server response bodies echoed into error messages and log records are
-  truncated.
+  truncated. This includes the invalid-input errors returned on submit, so the
+  `ConfigError` raised for them now carries a message string instead of the raw
+  list of errors.
 - A generator passed as `projection` is materialized during validation instead of
   being exhausted by it and then serialized by its `repr()`.
 

@@ -213,23 +213,27 @@ class _ApiClient:
 
         if self._server_unavailable(response.status_code):
             logger.debug(
-                f"Error posting job, retry later ({response.status_code} {response.text})"
+                f"Error posting job, retry later ({response.status_code} {_util.truncate(response.text)})"
             )
             # Server error on initial post -> suggest retrying whole query later again
             raise Retry(
                 after=response.headers.get("Retry-After", 10), url=str(response.url)
             )
         elif (invalid_inputs := self._invalid_input_error(response)) is not None:
-            raise ConfigError(invalid_inputs, url=str(response.url))
+            raise ConfigError(
+                f"Sharing API rejected the query inputs for submit,"
+                f" {_util.truncate(json.dumps(invalid_inputs))}",
+                url=str(response.url),
+            )
         elif response.status_code == 500:
             raise ServerError(
-                f"Sharing API server error 500 for submit, {response.text}",
+                f"Sharing API server error 500 for submit, {_util.truncate(response.text)}",
                 url=str(response.url),
             )
         elif response.status_code != 202:
             self._raise_for_client_error(response, "submit")
             raise NetworkError(
-                f"Unexpected status {response.status_code} for submit, {response.text}",
+                f"Unexpected status {response.status_code} for submit, {_util.truncate(response.text)}",
                 url=str(response.request.url),
             )
 
@@ -285,7 +289,7 @@ class _ApiClient:
             else:
                 self._raise_for_client_error(response, "loading results")
                 raise Retry(
-                    f"Unexpected status {response.status_code} loading results, {response.text}",
+                    f"Unexpected status {response.status_code} loading results, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
 
@@ -339,7 +343,7 @@ class _ApiClient:
             else:
                 self._raise_for_client_error(response, "fetching results")
                 raise Retry(
-                    f"Unexpected status {response.status_code} fetching results, {response.text}",
+                    f"Unexpected status {response.status_code} fetching results, {_util.truncate(response.text)}",
                     url=str(response.url),
                 )
 
