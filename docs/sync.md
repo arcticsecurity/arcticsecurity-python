@@ -8,7 +8,7 @@ The class is named after that synchronization, not after the Sharing API's synch
 
 `Sync.read()` reads the next batch of events from the API. It returns a `SyncReadResponse` with the events (`events`), a continuation token (`token`), and a flag telling whether more events exist in the database at the moment (`has_more`).
 
-A `token` should be provided for the `read()` call in all but the very first call. The `token` is returned by the `read()`. Using the `token` provides continuity in the events.
+A `token` should be provided for the `read()` call in all but the very first call. The `token` is returned by the `read()`. Using the `token` provides continuity in the events. The returned `token` is `None` only when the server reported no position at all; keep the previously held token in that case instead of overwriting it.
 
 `Sync.seek()` sets the initial start time for synchronization. This is only used when no `token` is provided to `read()`. By default, synchronization starts from the current time.
 
@@ -26,8 +26,11 @@ while True:
 
     # Update the token before testing has_more. On the last batch the
     # server returns the last inserted token instead of a next token, and
-    # that is what lets the next run resume where this one stopped.
-    token = res.token
+    # that is what lets the next run resume where this one stopped. The
+    # token is None only when the server reported no position at all; then
+    # keep the previous one rather than losing the resume point.
+    if res.token is not None:
+        token = res.token
 
     if not res.has_more:
         break
@@ -47,8 +50,9 @@ while True:
     process(res.events)
 
     # Always keep the token, also for an empty batch: it is the resume
-    # point for the next run.
-    token = res.token
+    # point for the next run. Keep the previous one if none was reported.
+    if res.token is not None:
+        token = res.token
 
     if not res.has_more:
         break
@@ -90,8 +94,10 @@ while True:
             # Process events and update the last known insertion time
             last_inserted = res.events[-1]["insertion time"]
 
-        # Advance the token, then persist token and last_inserted together
-        token = res.token
+        # Advance the token, then persist token and last_inserted together.
+        # Keep the previous token if the server reported no position.
+        if res.token is not None:
+            token = res.token
 
         if not res.has_more:
             # No more events

@@ -45,7 +45,9 @@ while True:
     res = sync.read(token=token, pagesize=1000)
     # process res.events...
 
-    token = res.token
+    # res.token is None when the server reported no position; keep the old one
+    if res.token is not None:
+        token = res.token
 
     if not res.has_more:
         break
