@@ -494,7 +494,7 @@ class _ShareUrls:
             )
 
         if not o.netloc:
-            raise ConfigError(f"API share url has no host: {sync_url!r}")
+            raise ConfigError("API share url has no host")
 
         qp = parse_qs(o.query, keep_blank_values=True)
 
