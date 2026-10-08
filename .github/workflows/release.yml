@@ -80,7 +80,7 @@ jobs:
           uv publish
       - name: Create GitHub release
         if: steps.version-check.outputs.NEW_VERSION == 'true'
-        run: gh release create "$TAG" dist/* -F RELEASE_NOTES.md
+        run: gh release create "$TAG" dist/* --notes-file RELEASE_NOTES.md --title "$TAG"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v${{ steps.version-check.outputs.VERSION }}
