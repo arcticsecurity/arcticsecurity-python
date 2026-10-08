@@ -55,9 +55,10 @@ jobs:
               }
               {
                   if ($0 ~ pattern) {
-                      flag=1;
+                      flag = 1;
                       next;
-                  } else if (flag == 1) {
+                  }
+                  if (flag == 1) {
                       if (/^#[#] /) exit;
                       print;
                   }
