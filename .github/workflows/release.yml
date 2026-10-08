@@ -45,6 +45,30 @@ jobs:
               echo "VERSION=${VERSION}"
               echo "NEW_VERSION=${NEW_VERSION}"
           } >> "$GITHUB_OUTPUT"
+      - name: Create release notes
+        if: steps.version-check.outputs.NEW_VERSION == 'true'
+        run: |
+          awk -v "VER=${VERSION}" '
+              BEGIN {
+                  gsub(/\./, "\\.", VER);
+                  pattern = "^## " VER " - ";
+              }
+              {
+                  if ($0 ~ pattern) {
+                      flag=1;
+                      next;
+                  } else if (flag == 1) {
+                      if (/^#[#] /) exit;
+                      print;
+                  }
+              }
+              ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ -z "$(tr -d '[:space:]' < RELEASE_NOTES.md)" ]; then
+              echo "::error::Empty release notes for version ${TAG} in CHANGELOG.md" 1>&2
+              exit 1
+          fi
+        env:
+          VERSION: ${{ steps.version-check.outputs.VERSION }}
       - name: Build and publish
         if: steps.version-check.outputs.NEW_VERSION == 'true'
         run: |
@@ -52,7 +76,7 @@ jobs:
           uv publish
       - name: Create GitHub release
         if: steps.version-check.outputs.NEW_VERSION == 'true'
-        run: gh release create "$TAG" dist/* --generate-notes
+        run: gh release create "$TAG" dist/* -F RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v${{ steps.version-check.outputs.VERSION }}
