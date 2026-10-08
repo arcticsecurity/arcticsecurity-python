@@ -1,7 +1,7 @@
 ---
 site_name: Arctic Security
 site_description: Documentation for Arctic Security Python library
-site_url: https://github.com/abusesa/arcticsecurity-python
+site_url: https://github.com/arcticsecurity/arcticsecurity-python
 
 theme:
   name: material
@@ -45,8 +45,8 @@ plugins:
             show_signature_annotations: true
             show_signature_type_parameters: true
 
-repo_name: abusesa/arcticsecurity-python
-repo_url: https://github.com/abusesa/arcticsecurity-python
+repo_name: arcticsecurity/arcticsecurity-python
+repo_url: https://github.com/arcticsecurity/arcticsecurity-python
 edit_uri: ""
 
 nav:
