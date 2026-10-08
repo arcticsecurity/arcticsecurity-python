@@ -1,4 +1,4 @@
-## Query API
+## Query
 
 The `Query` class reads events that match user-provided conditions. It is ideal for fetching specific events from the API in one-time queries.
 
