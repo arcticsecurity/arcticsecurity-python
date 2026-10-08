@@ -5,6 +5,9 @@
 ::: arcticsecurity.sharing_api.Sync
     :docstring:
 
+::: arcticsecurity.sharing_api.SyncReadResponse
+    :docstring:
+
 ## Query
 
 ::: arcticsecurity.sharing_api.Query
@@ -13,12 +16,20 @@
 ::: arcticsecurity.sharing_api.query
     :docstring:
 
+## Types
+
+::: arcticsecurity.sharing_api.Event
+    :docstring:
+
 ## Exception classes
 
 ::: arcticsecurity.sharing_api.Error
     :docstring:
 
 ::: arcticsecurity.sharing_api.ConfigError
+    :docstring:
+
+::: arcticsecurity.sharing_api.AuthError
     :docstring:
 
 ::: arcticsecurity.sharing_api.InvalidTokenError

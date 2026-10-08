@@ -4,8 +4,11 @@ Sharing API errors
 
 from typing import Any, Optional, Union
 
+from ._util import parse_retry_after
+
 __all__ = [
     "Error",
+    "AuthError",
     "ConfigError",
     "InvalidTokenError",
     "ServerError",
@@ -27,6 +30,20 @@ class ConfigError(Error):
     """User error in query configuration.
 
     This error may be raised by this library or by the server.
+    """
+
+    pass
+
+
+class AuthError(ConfigError):
+    """The server rejected the api key.
+
+    The share url is missing, has an expired or revoked api key, or the key
+    does not grant access to the requested share. Retrying will not help until
+    the url is fixed.
+
+    This is a subclass of `ConfigError`, since it always indicates a problem
+    with the configured share url.
     """
 
     pass
@@ -70,15 +87,16 @@ class Retry(NetworkError):
 
     This is raised from errors that are likely transient and may succeed if retried
     after some time.
+    Attributes:
+        after: Number of seconds the server asked the client to wait before
+            retrying, or `None` if the server did not say (or said something
+            unparseable). This value is advisory and is not bounded; the caller
+            decides how long it is willing to wait.
     """
 
-    def __init__(self, *args: Any, after: Union[str, int, None] = None, **kwargs: Any):
+    def __init__(
+        self, *args: Any, after: Union[str, int, float, None] = None, **kwargs: Any
+    ):
         super().__init__(*args, **kwargs)
 
-        if after is None:
-            self.after = None
-        else:
-            try:
-                self.after = int(after)
-            except ValueError:
-                self.after = None
+        self.after = parse_retry_after(after)

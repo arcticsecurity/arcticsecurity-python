@@ -28,7 +28,9 @@ for event in Query(url).query(filter='"network owner"="Example Co"', max_events=
 
 ### Sync
 
-Use the [`Sync`](sync.md) class to reliably fetch all event data. It uses pagination with opaque continuation tokens to ensure no events are missed.
+Use the [`Sync`](sync.md) class to reliably synchronize all event data. It uses pagination with opaque continuation tokens to ensure no events are missed.
+
+Here `Sync` means keeping your own copy of the events synchronized. It is unrelated to the Sharing API's synchronous endpoints: both classes use the asynchronous ones.
 
 ```python
 from arcticsecurity.sharing_api import Sync
@@ -36,19 +38,19 @@ from arcticsecurity.sharing_api import Sync
 url = "https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY"
 sync = Sync(url, filter='"network owner"="Example Co"')
 
-# Fetch token from previous run
-token = ...
+# Load the token stored by the previous run, or None on the first run
+token = None
 
 while True:
     res = sync.read(token=token, pagesize=1000)
-    if not res.events:
-        break
     # process res.events...
 
-    token = res.token
+    # res.token is None when the server reported no position; keep the old one
+    if res.token is not None:
+        token = res.token
 
     if not res.has_more:
-       break
+        break
 
 # store the token for the next run
 ```
@@ -56,6 +58,8 @@ while True:
 ## Sharing API URL
 
 Both `Query()` and `Sync()` require a share API URL. The URL must include an `apikey` query parameter. The API key is parsed from the URL and sent in the `Authorization` header.
+
+If the server rejects the API key, an `AuthError` is raised.
 
 Example URL:
 `https://example.com/shares/v2/share-id?apikey=YOUR_API_KEY`
