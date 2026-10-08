@@ -2,7 +2,6 @@
 Sharing API client.
 """
 
-import json
 import logging
 import time
 from collections.abc import Iterable, Iterator
@@ -10,22 +9,50 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, Union
 
+import httpx
+
+from . import _util
 from ._api_client import _ApiClient
 from .errors import ConfigError, ServerError
 
 logger = logging.getLogger(__name__)
+
 Event = dict[str, Union[str, list[str]]]
+"""A single event, mapping a field name to its value or list of values."""
 
 
 @dataclass(frozen=True)
 class SyncReadResponse:
+    """Result of a single `Sync.read()` call.
+
+    Attributes:
+        events: The batch of events, in database insertion order.
+        token: Continuation token to pass to the next `read()` call. This is
+            the next token when more events are available, and the last
+            inserted token otherwise. It is `None` only when the server
+            reported no position at all, in which case the previously held
+            token should be kept.
+        has_more: Whether more events already exist in the database at the
+            moment. When `False`, the caller has reached the end of the
+            stream and should wait before reading again.
+    """
+
     events: list[Event]
     token: Optional[str]
     has_more: bool
 
 
 class Sync:
-    """Sync events from sharing API."""
+    """Synchronize events from sharing API.
+
+    Reads every event matching the given conditions in database insertion
+    order, so that a caller can keep its own copy of the events up to date
+    without missing any.
+
+    The name refers to that synchronization, not to the sharing API's
+    synchronous endpoints. This class queries the asynchronous endpoints,
+    as `Query` does.
+    """
 
     allowed_user_provided_qps = {
         "filter",
@@ -39,16 +66,21 @@ class Sync:
         filter: Optional[str] = None,
         projection: Optional[Iterable[str]] = None,
         start: Union[datetime, int, float, None] = None,
+        user_agent: Optional[str] = None,
+        allow_insecure: bool = False,
         **kwargs: Any,
     ):
         """
         Initialize Sync class.
 
         Args:
-            url: Sharing API url, must include `apikey` query parameter.
+            url: Sharing API url, must be an `https` url and must include
+                `apikey` query parameter.
             filter: Rulelang filter.
             projection: List of event field names to include in the results. Note that the list of keys provided by the server can only be limited by this parameter.
             start: Start time for the initial query. Can also be set with seek(). Default value `None` means current time. Positive numbers are interpret as epoch time. Non-positive numbers are interpret as that many seconds in the past.
+            user_agent: Value appended to the `User-Agent` request header.
+            allow_insecure: Accept a plain `http` url. The api key is sent on every request, so it is then transmitted in cleartext. Intended for development servers only.
         """
 
         # Check args
@@ -58,29 +90,15 @@ class Sync:
         if not (filter is None or isinstance(filter, str)):
             raise TypeError(f"filter must be string or None, not {type(filter)}")
 
-        if not (
-            projection is None
-            or (
-                isinstance(projection, Iterable)
-                and not isinstance(projection, str)
-                and all(isinstance(x, str) for x in projection)
-            )
-        ):
-            raise TypeError(
-                "projection must be a list of key names, each an instance of str"
-            )
+        projection = _validate_projection(projection)
 
-        user_agent = kwargs.pop("user_agent", None)
-        if not (user_agent is None or isinstance(user_agent, str)):
-            raise TypeError(
-                f"user_agent must be string or None, not {type(user_agent)}"
-            )
+        client_kwargs = _validate_client_kwargs(user_agent, allow_insecure)
 
         if kwargs:
             raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
 
         # Initialize client
-        self.api_client = _ApiClient(url, user_agent=user_agent)
+        self.api_client = _ApiClient(url, **client_kwargs)
 
         invalid_qps_in_url = (
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
@@ -103,7 +121,7 @@ class Sync:
         pagesize: int = 1000,
         timeout: Optional[float] = 600,
     ) -> SyncReadResponse:
-        """Sync events from sharing API
+        """Read the next batch of events to synchronize.
 
         Events are returned sorted by insertion time.
 
@@ -146,15 +164,11 @@ class Sync:
             token = resp.headers.get("x-last-inserted-token", None)
             has_more = False
 
-        try:
-            return SyncReadResponse(
-                resp.json(),
-                token,
-                has_more,
-            )
-        except json.decoder.JSONDecodeError:
-            logger.error(f"Invalid response from server {resp.content=}")
-            raise ServerError(f"Invalid response from server {resp}")
+        return SyncReadResponse(
+            _parse_events(resp),
+            token,
+            has_more,
+        )
 
     def seek(self, ts: Union[datetime, int, float, None]) -> None:
         """Set sync start to specific time.
@@ -192,29 +206,35 @@ class Query:
         "reverse",
     }
 
-    def __init__(self, url: str, **kwargs: Any):
+    def __init__(
+        self,
+        url: str,
+        *,
+        user_agent: Optional[str] = None,
+        allow_insecure: bool = False,
+        **kwargs: Any,
+    ):
         """
         Initialize Query class.
 
         Args:
-            url: Sharing API url, must include `apikey` query parameter.
+            url: Sharing API url, must be an `https` url and must include
+                `apikey` query parameter.
+            user_agent: Value appended to the `User-Agent` request header.
+            allow_insecure: Accept a plain `http` url. The api key is sent on every request, so it is then transmitted in cleartext. Intended for development servers only.
         """
 
         # Check args
         if not isinstance(url, str):
             raise TypeError(f"url must be string not {type(url)}")
 
-        user_agent = kwargs.pop("user_agent", None)
-        if not (user_agent is None or isinstance(user_agent, str)):
-            raise TypeError(
-                f"user_agent must be string or None, not {type(user_agent)}"
-            )
+        client_kwargs = _validate_client_kwargs(user_agent, allow_insecure)
 
         if kwargs:
             raise ValueError(f"Unknown parameter(s) {tuple(kwargs.keys())}")
 
         # Initialize client
-        self.api_client = _ApiClient(url, user_agent=user_agent)
+        self.api_client = _ApiClient(url, **client_kwargs)
 
         invalid_qps_in_url = (
             self.api_client.urls.qp.keys() - self.allowed_user_provided_qps
@@ -253,17 +273,7 @@ class Query:
         if not (filter is None or isinstance(filter, str)):
             raise TypeError(f"filter must be string or None, not {type(filter)}")
 
-        if not (
-            projection is None
-            or (
-                isinstance(projection, Iterable)
-                and not isinstance(projection, str)
-                and all(isinstance(x, str) for x in projection)
-            )
-        ):
-            raise TypeError(
-                "projection must be a list of key names, each an instance of str"
-            )
+        projection = _validate_projection(projection)
 
         if not (start is None or isinstance(start, (int, float, datetime))):
             raise TypeError(
@@ -302,21 +312,28 @@ class Query:
             }
         )
 
+        return self._iter_events(qp, max_events, timeout)
+
+    def _iter_events(
+        self,
+        qp: dict[str, Any],
+        max_events: int,
+        timeout: Optional[float],
+    ) -> Iterator[Event]:
+        """Generate events page by page. Arguments are already validated."""
         more = True
-        token = None
         n_events = 0
 
         while more:
             resp = self.api_client.async_query(qp, timeout=timeout)
-            events = resp.json()
+            events = _parse_events(resp)
             logger.debug(f"queried, got {len(events)} events")
 
             try:
-                token = resp.headers["x-next-token"]
+                qp["token"] = resp.headers["x-next-token"]
             except KeyError:
                 more = False
             else:
-                qp["token"] = token
                 more = True
 
             for event in events:
@@ -333,6 +350,78 @@ class Query:
 def query(url: str, **kwargs: Any) -> Iterable[Event]:
     """Shortcut to Query(url).query()."""
     return Query(url).query(**kwargs)
+
+
+def _parse_events(resp: httpx.Response) -> list[Event]:
+    """Decode and sanity check an events response body.
+
+    Query used to call resp.json() bare, so malformed output escaped as a raw
+    json.JSONDecodeError instead of a ServerError. Neither caller checked that
+    the payload was a list, so a JSON object made Query yield its keys as if
+    they were events.
+    """
+    try:
+        events = resp.json()
+    except ValueError:
+        logger.error(f"Invalid response from server {_util.truncate(resp.text)!r}")
+        raise ServerError("Invalid response from server: not valid JSON")
+
+    if not isinstance(events, list):
+        logger.error(f"Unexpected response from server {_util.truncate(resp.text)!r}")
+        raise ServerError(
+            f"Unexpected response from server: expected a list of events,"
+            f" got {type(events).__name__}"
+        )
+
+    return events
+
+
+def _validate_projection(
+    projection: Optional[Iterable[str]],
+) -> Optional[list[str]]:
+    """Validate and materialize the projection argument.
+
+    Returning a list matters: validating with `all(... for x in projection)`
+    exhausts a generator, and the exhausted object would then be handed to
+    httpx, which would serialize its repr() as the query parameter value.
+
+    >>> _validate_projection(None) is None
+    True
+    >>> _validate_projection(x for x in ["uuid", "severity"])
+    ['uuid', 'severity']
+    >>> _validate_projection("uuid")
+    Traceback (most recent call last):
+    TypeError: projection must be a list of key names, each an instance of str
+    """
+    if projection is None:
+        return None
+
+    if isinstance(projection, str) or not isinstance(projection, Iterable):
+        raise TypeError(
+            "projection must be a list of key names, each an instance of str"
+        )
+
+    keys = list(projection)
+
+    if not all(isinstance(x, str) for x in keys):
+        raise TypeError(
+            "projection must be a list of key names, each an instance of str"
+        )
+
+    return keys
+
+
+def _validate_client_kwargs(
+    user_agent: Optional[str], allow_insecure: bool
+) -> dict[str, Any]:
+    """Validate the api client arguments shared by Sync and Query."""
+    if not (user_agent is None or isinstance(user_agent, str)):
+        raise TypeError(f"user_agent must be string or None, not {type(user_agent)}")
+
+    if not isinstance(allow_insecure, bool):
+        raise TypeError(f"allow_insecure must be bool, not {type(allow_insecure)}")
+
+    return {"user_agent": user_agent, "allow_insecure": allow_insecure}
 
 
 def _remove_none_values(d: dict[str, Optional[Any]]) -> dict[str, Any]:
