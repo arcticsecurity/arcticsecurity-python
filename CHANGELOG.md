@@ -1,5 +1,11 @@
 # arcticsecurity-python
 
+## Unreleased
+
+### Changed
+
+- Use `requests` (2.28.2 or newer) instead of `httpx` for HTTP.
+
 ## 0.2.0 - 2026-10-08
 
 ### Added

@@ -10,9 +10,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Optional, Union
-from urllib.parse import parse_qs, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
-import httpx
+import requests
+from requests.adapters import BaseAdapter
 
 from . import _util, _version
 from .errors import (
@@ -82,6 +83,22 @@ class Timeout:
         self.check()
 
 
+class _Session(requests.Session):
+    """Session with a default timeout.
+
+    requests has no session-wide timeout setting, so apply one to every
+    request that does not set its own.
+    """
+
+    def __init__(self, timeout: float):
+        super().__init__()
+        self.timeout = timeout
+
+    def request(self, *args: Any, **kwargs: Any) -> requests.Response:
+        kwargs.setdefault("timeout", self.timeout)
+        return super().request(*args, **kwargs)
+
+
 @dataclass
 class Query:
     """Handle one 3-phase async query.
@@ -89,11 +106,11 @@ class Query:
     Check for timeout every time client is accessed.
     """
 
-    _client: httpx.Client
+    _client: requests.Session
     timeout: Timeout
 
     # Query details for introspection
-    post_url: Optional[httpx.URL] = None
+    post_url: Optional[str] = None
 
     def __enter__(self) -> "Query":
         self._client.__enter__()
@@ -110,7 +127,7 @@ class Query:
         return self._client.__exit__(exc_type, exc, tb)
 
     @property
-    def client(self) -> httpx.Client:
+    def client(self) -> requests.Session:
         self.timeout.check()
         return self._client
 
@@ -136,7 +153,7 @@ class _ApiClient:
         *,
         user_agent: Optional[str] = None,
         allow_insecure: bool = False,
-        transport: Optional[httpx.BaseTransport] = None,
+        adapter: Optional[BaseAdapter] = None,
         sleep_before_first_status_query: float = 0.5,
         sleep_after_50x_error_within_query: float = 10,
         max_unavailable_retries: int = 10,
@@ -144,8 +161,8 @@ class _ApiClient:
         self.urls = _ShareUrls(url, allow_insecure=allow_insecure)
         self.user_agent = user_agent or _version.user_agent
 
-        # Transport to use in httpx client. Should only be defined in testing
-        self.transport = transport
+        # Transport adapter to use in requests session. Should only be defined in testing
+        self.adapter = adapter
         # Time to wait for before first GET status after POST query
         self.sleep_before_first_status_query = sleep_before_first_status_query
         # Time to wait after 50x response within a query. These are typically
@@ -155,20 +172,35 @@ class _ApiClient:
         # Bounds the retry loops when there is no timeout.
         self.max_unavailable_retries = max_unavailable_retries
 
-    def _get_client(self) -> httpx.Client:
+    def _get_client(self) -> requests.Session:
         """Initiaze new client."""
-        return httpx.Client(
-            base_url=self.urls.base_url,
-            follow_redirects=True,
-            timeout=60,
-            headers={
+        # HTTP headers must be ASCII. requests would send non-ASCII values
+        # encoded as latin-1 instead of failing.
+        self.user_agent.encode("ascii")
+
+        session = _Session(timeout=60)
+        session.headers.update(
+            {
                 **self.urls.authorization_header,
                 "USER-AGENT": self.user_agent,
                 "ACCEPT-ENCODING": "gzip",
                 "ACCEPT": "application/json",
-            },
-            transport=self.transport,
+            }
         )
+        if self.adapter is not None:
+            session.mount("https://", self.adapter)
+            session.mount("http://", self.adapter)
+        return session
+
+    def _url(self, path: str) -> str:
+        """Resolve a path or a Location header value against the share base url."""
+        return urljoin(self.urls.base_url + "/", path)
+
+    @staticmethod
+    def _network_error(error: requests.RequestException, url: str) -> NetworkError:
+        if error.request is not None and error.request.url:
+            url = error.request.url
+        return NetworkError(f"Downloading {url} failed: {error}", url=url)
 
     def _init_query(self, timeout: Optional[float]) -> Query:
         return Query(
@@ -180,7 +212,7 @@ class _ApiClient:
         self,
         params: Optional[dict[str, Union[str, Sequence[str], int, float]]] = None,
         timeout: Optional[float] = None,
-    ) -> httpx.Response:
+    ) -> requests.Response:
         """Execute 3-phase async query."""
         qp = {**self.urls.qp, **(params or {})}
         invalid_params = qp.keys() - self.allowed_params
@@ -202,14 +234,12 @@ class _ApiClient:
 
         Returns status url.
         """
+        url = self._url(self.urls.async_path)
         try:
-            response = query.client.post(url=self.urls.async_path, params=params)
+            response = query.client.post(url, params=params)
             query.post_url = response.request.url
-        except httpx.RequestError as error:
-            raise NetworkError(
-                f"Downloading {error.request.url} failed: {error}",
-                url=str(error.request.url),
-            )
+        except requests.RequestException as error:
+            raise self._network_error(error, url)
 
         if self._server_unavailable(response.status_code):
             logger.debug(
@@ -246,14 +276,13 @@ class _ApiClient:
         """GET async result url from status url."""
         unavailable_attempts = 0
 
+        url = self._url(url)
+
         while True:
             try:
-                response = query.client.get(url=url, follow_redirects=False)
-            except httpx.RequestError as error:
-                raise NetworkError(
-                    f"Downloading {error.request.url} failed: {error}",
-                    url=str(error.request.url),
-                )
+                response = query.client.get(url, allow_redirects=False)
+            except requests.RequestException as error:
+                raise self._network_error(error, url)
 
             if response.status_code == 302:
                 # results are ready
@@ -298,18 +327,16 @@ class _ApiClient:
         except KeyError:
             raise Error("Location header missing from response", url=str(response.url))
 
-    def _async_get_result_response(self, query: Query, url: str) -> httpx.Response:
+    def _async_get_result_response(self, query: Query, url: str) -> requests.Response:
         """GET async result response."""
         unavailable_attempts = 0
+        url = self._url(url)
 
         while True:
             try:
                 response = query.client.get(url)
-            except httpx.RequestError as error:
-                raise NetworkError(
-                    f"Downloading {error.request.url} failed: {error}",
-                    url=str(error.request.url),
-                )
+            except requests.RequestException as error:
+                raise self._network_error(error, url)
 
             if response.status_code == 200:
                 break
@@ -337,9 +364,10 @@ class _ApiClient:
                 query.timeout.sleep(self.sleep_after_50x_error_within_query)
             elif self._is_invalid_token_error(response):
                 assert query.post_url is not None  # for mypy
-                raise InvalidTokenError(
-                    query.post_url.params.get("token"), url=str(response.url)
-                )
+                token = parse_qs(
+                    urlparse(query.post_url).query, keep_blank_values=True
+                ).get("token", [None])[0]
+                raise InvalidTokenError(token, url=str(response.url))
             else:
                 self._raise_for_client_error(response, "fetching results")
                 raise Retry(
@@ -350,7 +378,7 @@ class _ApiClient:
         return response
 
     def _check_unavailable_attempts(
-        self, attempts: int, response: httpx.Response, phase: str
+        self, attempts: int, response: requests.Response, phase: str
     ) -> None:
         """Give up once the server has been unavailable too many times in a row.
 
@@ -368,7 +396,7 @@ class _ApiClient:
         )
 
     @staticmethod
-    def _raise_for_client_error(response: httpx.Response, phase: str) -> None:
+    def _raise_for_client_error(response: requests.Response, phase: str) -> None:
         """Raise for a 4xx that will not become successful by retrying.
 
         Authentication and authorization failures used to surface as a generic
@@ -413,7 +441,7 @@ class _ApiClient:
         return status in (502, 503, 504)
 
     @staticmethod
-    def _is_invalid_token_error(response: httpx.Response) -> bool:
+    def _is_invalid_token_error(response: requests.Response) -> bool:
         """Does response contain "invalid token" error.
 
         {"title": "400 Bad Request", "errors": [{"type": "storage", "key": "token", "message": "Invalid token: foo"}]}%
@@ -427,13 +455,13 @@ class _ApiClient:
                     "Invalid token"
                 ):
                     return True
-        except json.decoder.JSONDecodeError:
+        except ValueError:
             return False
 
         return False
 
     @staticmethod
-    def _invalid_input_error(response: httpx.Response) -> Optional[Any]:
+    def _invalid_input_error(response: requests.Response) -> Optional[Any]:
         """If response contains "invalid inputs" error, return it.
 
         {'title': '400 Invalid input(s)', 'description': '2 invalid input(s)', 'errors': [{'key': 'start', 'type': 'query validation', 'message': "Invalid start: ['foo']"}, {'key': 'startt', 'type': 'query validation', 'message': 'Unknown parameter: startt'}]}
@@ -445,7 +473,7 @@ class _ApiClient:
             d = response.json()
             if d.get("title") == "400 Invalid input(s)":
                 return d.get("errors", [])
-        except json.decoder.JSONDecodeError:
+        except ValueError:
             return None
 
         return None
@@ -473,7 +501,7 @@ class _ShareUrls:
         separated from the url and used in the Authorization header on async api
         queries. All the query parameters are parsed and saved in `qp`, this is
         to allow merging them with the parameters provided in the url.
-        (by default httpx overrides qp's in url)
+        (by default requests appends params to the qp's in url)
 
         The api key is never included in `repr()` or `str()` of this object, so
         that it does not leak into logs, tracebacks or error reporting tools.

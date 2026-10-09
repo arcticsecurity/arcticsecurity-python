@@ -6,12 +6,20 @@ Test API client.
 
 import time
 from itertools import chain
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
-import httpx
 import pytest
+import requests
+from mock_http import MockAdapter, make_response
 
 from arcticsecurity.sharing_api import _api_client, _util, _version, errors
+
+
+def params(request: requests.PreparedRequest) -> dict[str, str]:
+    """Last value of each query parameter of a request."""
+    qp = parse_qs(urlparse(request.url).query, keep_blank_values=True)
+    return {k: v[-1] for k, v in qp.items()}
 
 
 class TestTimeout:
@@ -97,9 +105,9 @@ class MockServer:
         assert self.rid
         return f"{self.urls.async_path}/results/{self.rid}"
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: requests.PreparedRequest) -> requests.Response:
         """Route request to handler."""
-        key = (request.method, request.url.path)
+        key = (request.method, urlparse(request.url).path)
 
         if key == ("POST", self.urls.async_path):
             return self.handle_post_query(request)
@@ -112,7 +120,7 @@ class MockServer:
 
     def handle_post_query(self, request):
         self.jid = str(uuid4())
-        return httpx.Response(
+        return make_response(
             202,
             headers={"Location": self.job_location()},
         )
@@ -120,7 +128,7 @@ class MockServer:
     def handle_get_status(self, request):
         self.jid = None
         self.rid = str(uuid4())
-        return httpx.Response(
+        return make_response(
             302,
             headers={"Location": self.result_location()},
         )
@@ -140,7 +148,7 @@ class MockServer:
             headers["x-first-token"] = events[0]["uuid"]
             headers["x-last-token"] = events[-1]["uuid"]
 
-        return httpx.Response(
+        return make_response(
             200,
             json=events,
             headers=headers,
@@ -216,11 +224,11 @@ class TestApi:
     def test_post_fails_on_network_error(self):
         class Server(MockServer):
             def handle_post_query(self, request):
-                raise httpx.RequestError("failed")
+                raise requests.ConnectionError("failed", request=request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.NetworkError) as excinfo:
             api.async_query()
         assert (
@@ -232,11 +240,11 @@ class TestApi:
     def test_post_fails_on_401(self):
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(401)
+                return make_response(401)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.AuthError) as excinfo:
             api.async_query()
         assert (
@@ -249,11 +257,11 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(403, text="403 Forbidden")
+                return make_response(403, text="403 Forbidden")
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.AuthError) as excinfo:
             api.async_query()
         # AuthError is a ConfigError, not a NetworkError: retrying will not help
@@ -263,22 +271,22 @@ class TestApi:
     def test_post_fails_on_404(self):
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(404)
+                return make_response(404)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.ConfigError):
             api.async_query()
 
     def test_post_fails_on_429(self):
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(429, headers={"Retry-After": "30"})
+                return make_response(429, headers={"Retry-After": "30"})
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.Retry) as excinfo:
             api.async_query()
         assert excinfo.value.after == 30
@@ -286,11 +294,11 @@ class TestApi:
     def test_response_body_truncated_in_error(self):
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(418, text="x" * 10_000)
+                return make_response(418, text="x" * 10_000)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.Error) as excinfo:
             api.async_query()
         assert len(str(excinfo.value)) < 1000
@@ -303,22 +311,22 @@ class TestApi:
         class Server(MockServer):
             def handle_post_query(self, request):
                 if phase == "post":
-                    return httpx.Response(code, text=body)
+                    return make_response(code, text=body)
                 return super().handle_post_query(request)
 
             def handle_get_status(self, request):
                 if phase == "status":
-                    return httpx.Response(code, text=body)
+                    return make_response(code, text=body)
                 return super().handle_get_status(request)
 
             def handle_get_results(self, request):
                 if phase == "results":
-                    return httpx.Response(code, text=body)
+                    return make_response(code, text=body)
                 return super().handle_get_results(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         api.sleep_before_first_status_query = 0
         with pytest.raises(errors.Error) as excinfo:
             api.async_query()
@@ -327,11 +335,11 @@ class TestApi:
     def test_response_body_truncated_in_unavailable_log(self, caplog):
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(503, text="x" * 10_000)
+                return make_response(503, text="x" * 10_000)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with caplog.at_level("DEBUG"), pytest.raises(errors.Retry):
             api.async_query()
         assert caplog.records
@@ -343,13 +351,13 @@ class TestApi:
                 errors = [
                     {"key": "k", "type": "query validation", "message": "x" * 10_000}
                 ]
-                return httpx.Response(
+                return make_response(
                     400, json={"title": "400 Invalid input(s)", "errors": errors}
                 )
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.ConfigError) as excinfo:
             api.async_query()
         assert len(str(excinfo.value)) < 1000
@@ -369,7 +377,7 @@ class TestApi:
                         "message": "Unknown parameter: startt",
                     },
                 ]
-                return httpx.Response(
+                return make_response(
                     400,
                     json={
                         "title": "400 Invalid input(s)",
@@ -379,8 +387,8 @@ class TestApi:
                 )
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.ConfigError):
             api.async_query()
 
@@ -388,11 +396,11 @@ class TestApi:
     def test_post_fails_on_50x(self, code):
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(code)
+                return make_response(code)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
 
         if code == 500:
             with pytest.raises(errors.ServerError) as excinfo:
@@ -408,11 +416,11 @@ class TestApi:
     def test_post_no_location_header(self):
         class Server(MockServer):
             def handle_post_query(self, request):
-                return httpx.Response(202)
+                return make_response(202)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
-        api = _api_client._ApiClient(url, transport=xport)
+        xport = MockAdapter(Server(url))
+        api = _api_client._ApiClient(url, adapter=xport)
         with pytest.raises(errors.Error) as excinfo:
             api.async_query()
         assert str(excinfo.value) == "Location header missing from response"
@@ -421,12 +429,12 @@ class TestApi:
     def test_get_status_fails_on_network_error(self):
         class Server(MockServer):
             def handle_get_status(self, request):
-                raise httpx.RequestError("failed")
+                raise requests.ConnectionError("failed", request=request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         with pytest.raises(errors.NetworkError) as excinfo:
             api.async_query()
@@ -435,9 +443,9 @@ class TestApi:
     def test_get_status_302(self):
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         events = ([{"uuid": str(uuid4())}],)
-        xport = httpx.MockTransport(MockServer(url, events=events))
+        xport = MockAdapter(MockServer(url, events=events))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         resp = api.async_query()
         assert resp.status_code == 200
@@ -453,15 +461,15 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(202, headers={"Retry-After": "0"})
+                    return make_response(202, headers={"Retry-After": "0"})
                 else:
                     return super().handle_get_status(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         events = ([{"uuid": str(uuid4())}],)
-        xport = httpx.MockTransport(Server(url, events=events))
+        xport = MockAdapter(Server(url, events=events))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         resp = api.async_query()
         assert resp.status_code == 200
@@ -488,15 +496,15 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(202, headers={"Retry-After": retry_after})
+                    return make_response(202, headers={"Retry-After": retry_after})
                 else:
                     return super().handle_get_status(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         events = ([{"uuid": str(uuid4())}],)
-        xport = httpx.MockTransport(Server(url, events=events))
+        xport = MockAdapter(Server(url, events=events))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         resp = api.async_query()
         assert resp.json() == list(chain(*events))
@@ -515,14 +523,14 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(202, headers={"Retry-After": "999999"})
+                    return make_response(202, headers={"Retry-After": "999999"})
                 else:
                     return super().handle_get_status(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url, events=([{"uuid": "x"}],)))
+        xport = MockAdapter(Server(url, events=([{"uuid": "x"}],)))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query()
         assert max(slept) <= _util.MAX_RETRY_AFTER
@@ -538,16 +546,16 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(code)
+                    return make_response(code)
                 else:
                     return super().handle_get_status(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         events = ([{"uuid": str(uuid4())}],)
-        xport = httpx.MockTransport(Server(url, events=events))
+        xport = MockAdapter(Server(url, events=events))
         api = _api_client._ApiClient(
             url,
-            transport=xport,
+            adapter=xport,
             sleep_before_first_status_query=0,
             sleep_after_50x_error_within_query=0,
         )
@@ -566,14 +574,14 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(code)
+                    return make_response(code)
                 else:
                     return super().handle_get_status(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         if code == 500:
             with pytest.raises(errors.ServerError) as excinfo:
@@ -594,12 +602,12 @@ class TestApi:
     def test_get_status_no_locaton_header(self):
         class Server(MockServer):
             def handle_get_status(self, request):
-                return httpx.Response(302)
+                return make_response(302)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         with pytest.raises(errors.Error) as excinfo:
             api.async_query()
@@ -611,12 +619,12 @@ class TestApi:
     def test_get_result_fails_on_network_error(self):
         class Server(MockServer):
             def handle_get_results(self, request):
-                raise httpx.RequestError("failed")
+                raise requests.ConnectionError("failed", request=request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         with pytest.raises(errors.NetworkError) as excinfo:
             api.async_query()
@@ -628,12 +636,12 @@ class TestApi:
     def test_get_result_410(self):
         class Server(MockServer):
             def handle_get_results(self, request):
-                return httpx.Response(410)
+                return make_response(410)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         with pytest.raises(errors.Retry) as excinfo:
             api.async_query()
@@ -654,16 +662,16 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(code)
+                    return make_response(code)
                 else:
                     return super().handle_get_results(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         events = ([{"uuid": str(uuid4())}],)
-        xport = httpx.MockTransport(Server(url, events=events))
+        xport = MockAdapter(Server(url, events=events))
         api = _api_client._ApiClient(
             url,
-            transport=xport,
+            adapter=xport,
             sleep_before_first_status_query=0,
             sleep_after_50x_error_within_query=0,
         )
@@ -682,14 +690,14 @@ class TestApi:
                 self.i += 1
 
                 if self.i == 1:
-                    return httpx.Response(code)
+                    return make_response(code)
                 else:
                     return super().handle_get_results(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         if code == 500:
             with pytest.raises(errors.ServerError) as excinfo:
@@ -720,12 +728,12 @@ class TestApi:
                     "key": "token",
                     "message": f"Invalid token: {token}",
                 }
-                return httpx.Response(400, json={"errors": [error]})
+                return make_response(400, json={"errors": [error]})
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         with pytest.raises(errors.InvalidTokenError) as excinfo:
             api.async_query(params={"token": token})
@@ -741,13 +749,13 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.params["filter"] == query
+                assert params(request)["filter"] == query
                 return super().handle_post_query(request)
 
         url = f"https://example.com/shares/v2/share-id?apikey=k1&filter={query}"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query()
 
@@ -759,15 +767,15 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.query == b"projection=a&projection=b"
+                assert urlparse(request.url).query == "projection=a&projection=b"
                 return super().handle_post_query(request)
 
         url = (
             "https://example.com/shares/v2/share-id?apikey=k1&projection=a&projection=b"
         )
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query()
 
@@ -777,13 +785,13 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.params["filter"] == query
+                assert params(request)["filter"] == query
                 return super().handle_post_query(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query(params={"filter": query})
 
@@ -792,15 +800,15 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.query == b"projection=a&projection=c"
+                assert urlparse(request.url).query == "projection=a&projection=c"
                 return super().handle_post_query(request)
 
         url = (
             "https://example.com/shares/v2/share-id?apikey=k1&projection=a&projection=b"
         )
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query(params={"projection": ["a", "c"]})
 
@@ -809,13 +817,13 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.params["reverse"] == ""
+                assert params(request)["reverse"] == ""
                 return super().handle_post_query(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1&reverse"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query()
 
@@ -824,13 +832,13 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.params["reverse"] == ""
+                assert params(request)["reverse"] == ""
                 return super().handle_post_query(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query(params={"reverse": ""})
 
@@ -840,13 +848,13 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.params["start"] == str(start)
+                assert params(request)["start"] == str(start)
                 return super().handle_post_query(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query(params={"start": start})
 
@@ -856,21 +864,21 @@ class TestApi:
 
         class Server(MockServer):
             def handle_post_query(self, request):
-                assert request.url.query == b"projection=a&projection=b"
+                assert urlparse(request.url).query == "projection=a&projection=b"
                 return super().handle_post_query(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query(params={"projection": projection})
 
     def test_timeout(self):
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(MockServer(url))
+        xport = MockAdapter(MockServer(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0.02
+            url, adapter=xport, sleep_before_first_status_query=0.02
         )
         with pytest.raises(errors.TimeoutError):
             api.async_query(timeout=0.01)
@@ -881,12 +889,12 @@ class TestApi:
 
         class Server(MockServer):
             def handle_get_status(self, request):
-                return httpx.Response(202, headers={"Retry-After": "30"})
+                return make_response(202, headers={"Retry-After": "30"})
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         started = time.monotonic()
         with pytest.raises(errors.TimeoutError):
@@ -904,13 +912,13 @@ class TestApi:
 
             def handle_get_status(self, request):
                 self.n += 1
-                return httpx.Response(code)
+                return make_response(code)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
         server = Server(url)
         api = _api_client._ApiClient(
             url,
-            transport=httpx.MockTransport(server),
+            adapter=MockAdapter(server),
             sleep_before_first_status_query=0,
             sleep_after_50x_error_within_query=0,
         )
@@ -925,9 +933,9 @@ class TestApi:
                 return super().handle_post_query(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
-            url, transport=xport, sleep_before_first_status_query=0
+            url, adapter=xport, sleep_before_first_status_query=0
         )
         api.async_query()
 
@@ -940,11 +948,11 @@ class TestApi:
                 return super().handle_post_query(request)
 
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(Server(url))
+        xport = MockAdapter(Server(url))
         api = _api_client._ApiClient(
             url,
             user_agent=user_agent,
-            transport=xport,
+            adapter=xport,
             sleep_before_first_status_query=0,
         )
         api.async_query()
@@ -953,11 +961,11 @@ class TestApi:
         """Test non-ascii user agent raises UnicodeError."""
         user_agent = "foo-baré"
         url = "https://example.com/shares/v2/share-id?apikey=k1"
-        xport = httpx.MockTransport(MockServer(url))
+        xport = MockAdapter(MockServer(url))
         api = _api_client._ApiClient(
             url,
             user_agent=user_agent,
-            transport=xport,
+            adapter=xport,
             sleep_before_first_status_query=0,
         )
         with pytest.raises(UnicodeError):
