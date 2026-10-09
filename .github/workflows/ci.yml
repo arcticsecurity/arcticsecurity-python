@@ -19,10 +19,10 @@ jobs:
           persist-credentials: false
       - name: Install latest version of uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
-      - name: Install dependencies
-        run: uv sync --group dev
       - name: Check that uv lockfile is up-to-date
         run: uv lock --check
+      - name: Install dependencies
+        run: uv sync --group dev
       - name: Run ruff format
         run: uv run ruff format --check
       - name: Run ruff check
