@@ -22,7 +22,7 @@ jobs:
         with:
           enable-cache: false
       - name: Check that uv lockfile is up-to-date
-        run: uv lock --check
+        run: uv lock --check --no-cache
 
   lint:
     runs-on: ubuntu-slim
