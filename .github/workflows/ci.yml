@@ -19,10 +19,8 @@ jobs:
           persist-credentials: false
       - name: Install  uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
-        with:
-          enable-cache: false
       - name: Check that uv lockfile is up-to-date
-        run: uv lock --check --no-cache
+        run: uv lock --check --refresh
 
   lint:
     runs-on: ubuntu-slim
