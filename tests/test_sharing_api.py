@@ -8,8 +8,8 @@ from typing import no_type_check
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-import httpx
 import pytest
+from mock_http import make_response
 
 from arcticsecurity import sharing_api
 from arcticsecurity.sharing_api import errors
@@ -38,7 +38,7 @@ class MockClient(_ApiClient):
             headers["x-first-token"] = events[0]["uuid"]
             headers["x-last-token"] = events[-1]["uuid"]
 
-        return httpx.Response(
+        return make_response(
             200,
             json=events,
             headers=headers,
@@ -264,7 +264,7 @@ class TestQuery:
 
         class BadClient(MockClient):
             def async_query(self, *args, **kwargs):
-                return httpx.Response(200, text="not json")
+                return make_response(200, text="not json")
 
         query = sharing_api.Query(url)
         query.api_client = BadClient(url)
@@ -277,7 +277,7 @@ class TestQuery:
 
         class BadClient(MockClient):
             def async_query(self, *args, **kwargs):
-                return httpx.Response(200, json={"count": 5})
+                return make_response(200, json={"count": 5})
 
         query = sharing_api.Query(url)
         query.api_client = BadClient(url)
@@ -345,7 +345,7 @@ class TestSync:
         class Client(MockClient):
             def async_query(self, params, timeout):
                 assert params["limit"] == pagesize
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url)
@@ -360,7 +360,7 @@ class TestSync:
             def async_query(self, params, timeout):
                 assert params["start"] == dt.timestamp()
                 assert "token" not in params
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url, start=dt)
@@ -376,7 +376,7 @@ class TestSync:
             def async_query(self, params, timeout):
                 assert params["token"] == token
                 assert "start" not in params
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url, start=dt)
@@ -391,7 +391,7 @@ class TestSync:
             def async_query(self, params, timeout):
                 assert params["start"] == dt.timestamp()
                 assert "token" not in params
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url)
@@ -415,7 +415,7 @@ class TestSync:
             def async_query(self, params, timeout):
                 # start is really on the local system timezone
                 assert params["start"] == aware_dt.timestamp()
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url, start=naive_dt)
@@ -438,7 +438,7 @@ class TestSync:
             def async_query(self, params, timeout):
                 # start is really on the local system timezone
                 assert params["start"] == aware_dt.timestamp()
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url, start=aware_dt)
@@ -452,7 +452,7 @@ class TestSync:
         class Client(MockClient):
             def async_query(self, params, timeout):
                 assert params["start"] == start
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url, start=start)
@@ -472,7 +472,7 @@ class TestSync:
             def async_query(self, params, timeout):
                 # start is really on the local system timezone
                 assert params["start"] == ts
-                return httpx.Response(200, json=[])
+                return make_response(200, json=[])
 
         url = "https://example.com/shares/v2/share-id?apikey=api-key"
         sync = sharing_api.Sync(url)

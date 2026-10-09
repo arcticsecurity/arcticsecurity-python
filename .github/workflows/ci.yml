@@ -72,3 +72,29 @@ jobs:
         run: uv sync --group dev
       - name: Run pytest
         run: uv run pytest --doctest-modules
+
+  pytest-lowest:
+    # Test with the oldest supported versions of the runtime dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - lint
+      - typecheck
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install latest version of uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          python-version: "3.9"
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install --resolution lowest-direct .
+          uv pip install pytest
+      - name: Run pytest
+        run: uv run --no-sync pytest --doctest-modules
