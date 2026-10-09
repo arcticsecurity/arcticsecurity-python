@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, Union
 
-import httpx
+import requests
 
 from . import _util
 from ._api_client import _ApiClient
@@ -352,7 +352,7 @@ def query(url: str, **kwargs: Any) -> Iterable[Event]:
     return Query(url).query(**kwargs)
 
 
-def _parse_events(resp: httpx.Response) -> list[Event]:
+def _parse_events(resp: requests.Response) -> list[Event]:
     """Decode and sanity check an events response body.
 
     Query used to call resp.json() bare, so malformed output escaped as a raw
@@ -383,7 +383,7 @@ def _validate_projection(
 
     Returning a list matters: validating with `all(... for x in projection)`
     exhausts a generator, and the exhausted object would then be handed to
-    httpx, which would serialize its repr() as the query parameter value.
+    requests, which would serialize its repr() as the query parameter value.
 
     >>> _validate_projection(None) is None
     True
