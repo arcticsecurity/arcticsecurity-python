@@ -16,7 +16,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -34,7 +33,7 @@ Home = "https://github.com/arcticsecurity/arcticsecurity-python"
 Issues = "https://github.com/arcticsecurity/arcticsecurity-python/issues"
 
 [build-system]
-requires = ["uv_build >= 0.9.9, <0.10.0"]
+requires = ["uv_build >= 0.9.9, <=0.13.1"]
 build-backend = "uv_build"
 
 [tool.ruff]
