@@ -1,11 +1,15 @@
 import argparse
 import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from string import Template
 
-import tomli
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 
 class SpecTemplate(Template):
@@ -15,7 +19,7 @@ class SpecTemplate(Template):
 def get_pyproject_metadata() -> dict:
     pyproject_path = Path("pyproject.toml")
     with pyproject_path.open("rb") as f:
-        data = tomli.load(f)
+        data = tomllib.load(f)
 
     project = data.get("project", {})
 
