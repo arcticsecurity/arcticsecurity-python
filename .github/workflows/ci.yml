@@ -99,7 +99,7 @@ jobs:
       - name: Run pytest
         run: uv run --no-sync pytest --doctest-modules
 
-  pacakge:
+  package:
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -107,6 +107,8 @@ jobs:
     needs:
       - pytest
       - pytest-lowest
+    outputs:
+      VERSION: ${{ steps.version.outputs.VERSION }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -114,17 +116,38 @@ jobs:
           persist-credentials: false
       - name: Install latest version of uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      - name: Get package version
+        id: version
+        run: |
+          VERSION="$(uv version --short)"
+          echo "VERSION=${VERSION}" > "$GITHUB_OUTPUT"
       - name: Build wheel and source package
         run: uv build
       - name: Store wheel as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          path: ./dist/*.whl
+          path: ./dist/arcticsecurity-${{ steps.version.outputs.VERSION }}-py3-none-any.whl
           archive: false
           retention-days: 7
       - name: Store source package as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          path: ./dist/*.tar.gz
+          path: ./dist/arcticsecurity-${{ steps.version.outputs.VERSION }}.tar.gz
           archive: false
           retention-days: 7
+      - name: Build RPM spec file
+        run: uv run python rpmbuild/generate_spec.py
+      - name: Store RPM spec file as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          path: ./dist/python-arcticsecurity.spec
+          archive: false
+          retention-days: 7
+
+  rpmbuild:
+    needs:
+      - package
+    uses: $/.github/workflows/rpmbuild.yml
+    with:
+      rpm-spec-file: python-arcticsecurity.spec
+      source-artifact-name: arcticsecurity-${{ needs.package.outputs.VERSION }}.tar.gz
