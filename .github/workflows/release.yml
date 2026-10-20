@@ -81,7 +81,7 @@ jobs:
               echo "::error::Empty release notes for version ${VERSION} in CHANGELOG.md" 1>&2
               exit 1
           fi
-        with:
+        env:
           VERSION: ${{ needs.version-check.outputs.VERSION }}
       - name: Build RPM spec file
         run: uv run python rpmbuild/generate_spec.py
