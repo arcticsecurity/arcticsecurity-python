@@ -2,6 +2,10 @@
 
 A Python library to access Arctic Security's Sharing API endpoints and retrieve event data.
 
+## Documentation
+
+Full documentation, including API reference guides and examples, is available at: https://arcticsecurity.github.io/arcticsecurity-python/
+
 ## Installation
 
 ```bash

@@ -31,6 +31,7 @@ classifiers = [
 [project.urls]
 Home = "https://github.com/arcticsecurity/arcticsecurity-python"
 Issues = "https://github.com/arcticsecurity/arcticsecurity-python/issues"
+Documentation = "https://arcticsecurity.github.io/arcticsecurity-python"
 
 [build-system]
 requires = ["uv_build >= 0.9.9, <=0.13.1"]
