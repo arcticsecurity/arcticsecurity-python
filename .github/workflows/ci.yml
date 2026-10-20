@@ -123,25 +123,18 @@ jobs:
           echo "VERSION=${VERSION}" > "$GITHUB_OUTPUT"
       - name: Build wheel and source package
         run: uv build
-      - name: Store wheel as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          path: ./dist/arcticsecurity-${{ steps.version.outputs.VERSION }}-py3-none-any.whl
-          archive: false
-          retention-days: 7
-      - name: Store source package as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          path: ./dist/arcticsecurity-${{ steps.version.outputs.VERSION }}.tar.gz
-          archive: false
-          retention-days: 7
+      - name: Build documentation
+        run: uv run mkdocs build
       - name: Build RPM spec file
         run: uv run python rpmbuild/generate_spec.py
-      - name: Store RPM spec file as artifact
+      - name: Store build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          path: ./dist/python-arcticsecurity.spec
-          archive: false
+          name: build-outputs
+          path: |
+            dist/
+            site/
+            rpmbuild/python-arcticsecurity.spec
           retention-days: 7
 
   rpmbuild:
@@ -149,5 +142,4 @@ jobs:
       - package
     uses: $/.github/workflows/rpmbuild.yml
     with:
-      rpm-spec-file: python-arcticsecurity.spec
-      source-artifact-name: arcticsecurity-${{ needs.package.outputs.VERSION }}.tar.gz
+      build-artifact-name: build-outputs

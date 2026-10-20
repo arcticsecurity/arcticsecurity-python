@@ -143,7 +143,7 @@ def main() -> None:
         "-o",
         "--output",
         type=Path,
-        default=Path("dist/python-arcticsecurity.spec"),
+        default=Path("rpmbuild/python-arcticsecurity.spec"),
         help="Output spec file path",
     )
     args = parser.parse_args()
