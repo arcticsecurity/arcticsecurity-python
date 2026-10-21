@@ -1,0 +1,41 @@
+Name:           python-arcticsecurity
+Version:        @{VERSION}
+Release:        @{RELEASE}%{?dist}
+Summary:        Python client library for Arctic Security Sharing API
+
+License:        @{LICENSE}
+URL:            @{URL}
+Source0:        @{URL}/releases/download/v%{version}/arcticsecurity-%{version}.tar.gz
+BuildArch:      noarch
+BuildRequires:  python3-devel
+
+%description
+This package provides the official Python client library for Arctic Security.
+
+%package -n python3-arcticsecurity
+Summary:        %{summary}
+
+%description -n python3-arcticsecurity
+This package provides the official Python 3 library for Arctic Security.
+
+%prep
+%autosetup -n arcticsecurity-%{version}
+
+%generate_buildrequires
+%pyproject_buildrequires
+
+%build
+%pyproject_wheel
+
+%install
+%pyproject_install
+%pyproject_save_files arcticsecurity
+
+%check
+%pyproject_check_import
+
+%files -n python3-arcticsecurity -f %{pyproject_files}
+%doc README.md
+
+%changelog
+@{CHANGELOG}

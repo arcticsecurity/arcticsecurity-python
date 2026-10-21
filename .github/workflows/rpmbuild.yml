@@ -1,0 +1,53 @@
+---
+name: CI
+# yamllint disable-line rule:truthy
+on:
+  workflow_call:
+    inputs:
+      build-artifact-name:
+        description: Name of uploaded artifact that contains built files
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: fedora:latest
+      options: --privileged
+    steps:
+      - name: Install tooling
+        run: dnf -y install --nodocs --setopt=install_weak_deps=False mock
+      - name: Download source
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: ${{ inputs.build-artifact-name }}
+          path: .
+      - name: Build source RPM
+        run: |
+          mock -r centos-stream+epel-10-x86_64 --buildsrpm \
+              --spec rpmbuild/python-arcticsecurity.spec \
+              --sources dist/ \
+              --resultdir dist/
+      - name: Store source RPM as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          path: ./dist/*.src.rpm
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+      - name: Build binary RPM
+        run: |
+          mock -r centos-stream+epel-10-x86_64 \
+              dist/*.src.rpm \
+              --resultdir dist/
+      - name: Store binary RPM as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          path: ./dist/*.noarch.rpm
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
