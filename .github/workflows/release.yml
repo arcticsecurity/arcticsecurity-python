@@ -61,10 +61,10 @@ jobs:
         run: uv run mkdocs build
       - name: Create release notes
         run: |
-          awk -v "VER=${VERSION}" '
+          awk -v "VER=${VERSION}" -v "DATE=$(date '+%Y-%m-%d')" '
               BEGIN {
                   gsub(/\./, "\\.", VER);
-                  pattern = "^## " VER " - ";
+                  pattern = "^## " VER " - " DATE "$";
               }
               {
                   if ($0 ~ pattern) {
