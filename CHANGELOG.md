@@ -1,5 +1,11 @@
 # arcticsecurity-python
 
+## Unreleased
+
+### Added
+
+- Support for Python 3.15.
+
 ## 0.2.1 - 2026-10-21
 
 ### Changed
