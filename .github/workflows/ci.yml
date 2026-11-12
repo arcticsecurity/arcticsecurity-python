@@ -7,11 +7,28 @@ on:
 permissions: {}
 
 jobs:
+  uvcheck:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install  uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      - name: Check that uv lockfile is up-to-date
+        run: uv lock --check --refresh
+
   lint:
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: read
+    needs:
+      - uvcheck
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -33,6 +50,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+    needs:
+      - uvcheck
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
