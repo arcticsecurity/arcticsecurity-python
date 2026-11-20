@@ -36,7 +36,7 @@ Documentation = "https://arcticsecurity.github.io/arcticsecurity-python"
 Changelog = "https://arcticsecurity.github.io/arcticsecurity-python/changelog/"
 
 [build-system]
-requires = ["uv_build >= 0.9.9, <=0.13.5"]
+requires = ["uv_build >= 0.9.9, <=0.13.7"]
 build-backend = "uv_build"
 
 [tool.ruff]
