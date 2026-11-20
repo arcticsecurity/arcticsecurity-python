@@ -1,0 +1,18 @@
+#!/bin/sh
+# Runs ruff check --fix, ruff format and yamllint across the worktree.
+# Aborts the commit if Ruff modifies files so they can be reviewed and staged.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+before=$(git diff | git hash-object --stdin)
+uv run --locked ruff check --fix .
+uv run --locked ruff format .
+git ls-files '*.yml' '*.yaml' | while read -r f; do
+    if [ -e "$f" ]; then echo "$f"; fi
+done | xargs -r uv run --locked yamllint -s
+after=$(git diff | git hash-object --stdin)
+
+if [ "$before" != "$after" ]; then
+    echo "pre-commit: files were modified by ruff; review and stage the changes" >&2
+    exit 1
+fi
