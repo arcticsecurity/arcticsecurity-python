@@ -45,6 +45,10 @@ plugins:
             show_signature_annotations: true
             show_signature_type_parameters: true
 
+markdown_extensions:
+  - pymdownx.snippets:
+      check_paths: true
+
 repo_name: arcticsecurity/arcticsecurity-python
 repo_url: https://github.com/arcticsecurity/arcticsecurity-python
 edit_uri: ""
@@ -54,3 +58,4 @@ nav:
   - Sync: sync.md
   - Query: query.md
   - API Reference: api.md
+  - Changelog: changelog.md
