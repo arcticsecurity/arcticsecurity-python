@@ -74,6 +74,7 @@ Follows [Semantic Versioning v2](https://semver.org/spec/v2.0.0.html).
 
 ```bash
 uv sync --group dev
+git config --local core.hooksPath .githooks  # enable commit hook
 
 uv run ruff check .
 uv run pytest --doctest-modules
